@@ -286,17 +286,17 @@ WRITE ONLY THE OPTIMIZED POST:`;
         }
         
         const data = await response.json();
-        let post = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Failed';
+        let optimizedPost = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Failed';
         
-        post = post.trim();
-        if (post.includes('**Title:**')) {
-            post = post.replace(/\*\*Title:\*\*/g, '**Title:**');
+        optimizedPost = optimizedPost.trim();
+        if (optimizedPost.includes('**Title:**')) {
+            optimizedPost = optimizedPost.replace(/\*\*Title:\*\*/g, '**Title:**');
         }
         
         res.json({
             success: true,
             subreddit: subreddit,
-            post: post
+            post: optimizedPost
         });
         
     } catch (error) {
@@ -314,91 +314,79 @@ WRITE ONLY THE OPTIMIZED POST:`;
  * POST /api/dodo/create-session
  */
 app.post('/api/dodo/create-session', async (req, res) => {
-    try {
-        const { plan, amount, postsPerMonth, billingCycle, transactionId, userEmail, userId } = req.body;
-        
-        console.log('\n💳 Creating Dodo payment session:', { plan, amount, transactionId, userId });
-        
-        // Validate input
-        if (!plan || !amount || !transactionId || !userId) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Missing required fields: plan, amount, transactionId, userId' 
-            });
-        }
-
-        if (!DODO_API_KEY) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Dodo API key not configured' 
-            });
-        }
-
-        // Create payment session via Dodo API
-        const dodoResponse = await axios.post(`${DODO_BASE_URL}/v1/checkout/sessions`, {
-            amount: Math.round(amount * 100), // Convert to cents
-            currency: 'USD',
-            customer_email: userEmail || 'customer@redditfix.com',
-            description: `${plan} Plan - ${postsPerMonth} posts/month (${billingCycle})`,
-            metadata: {
-                userId,
-                plan,
-                postsPerMonth,
-                billingCycle,
-                transactionId,
-                appName: 'ReddiGen'
-            },
-            success_url: `${FRONTEND_URL}/dashboard.html?payment=success&session={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${FRONTEND_URL}/dashboard.html?payment=cancelled`,
-            webhook_url: `${BACKEND_URL}/api/dodo/webhook`
-        }, {
-            headers: {
-                'Authorization': `Bearer ${DODO_API_KEY}`,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        const sessionId = dodoResponse.data.id;
-        console.log('✅ Dodo session created:', sessionId);
-
-        // Store pending transaction in Supabase
-        const { error: dbError } = await supabase
-            .from('payments')
-            .insert([{
-                user_id: userId,
-                transaction_id: transactionId,
-                session_id: sessionId,
-                plan_type: plan,
-                amount: amount,
-                posts_per_month: postsPerMonth,
-                billing_cycle: billingCycle,
-                status: 'pending',
-                customer_email: userEmail,
-                created_at: new Date().toISOString()
-            }]);
-
-        if (dbError) {
-            console.error('❌ Database error:', dbError);
-            return res.status(500).json({ 
-                success: false, 
-                error: 'Failed to store transaction: ' + dbError.message
-            });
-        }
-
-        res.json({
-            success: true,
-            paymentUrl: dodoResponse.data.url,
-            sessionId: sessionId,
-            message: 'Payment session created successfully'
-        });
-        
-    } catch (error) {
-        console.error('❌ Dodo session error:', error.response?.data || error.message);
-        res.status(500).json({ 
+  try {
+    const { userId, plan, email, amount, postsPerMonth, billingCycle, transactionId } = req.body;
+    
+    console.log('\n💳 Creating payment session:', { userId, plan, amount });
+    
+    if (!DODO_API_KEY) {
+        return res.status(400).json({ 
             success: false, 
-            error: error.response?.data?.message || 'Failed to create payment session'
+            error: 'Dodo API key not configured' 
         });
     }
+
+    // Create payment session via Dodo API
+    const dodoResponse = await axios.post(`${DODO_BASE_URL}/v1/checkout/sessions`, {
+        amount: Math.round(amount * 100), // Convert to cents
+        currency: 'USD',
+        customer_email: email || 'customer@redditfix.com',
+        description: `${plan} Plan - ${postsPerMonth} posts/month (${billingCycle})`,
+        metadata: {
+            userId,
+            plan,
+            postsPerMonth,
+            billingCycle,
+            transactionId,
+            appName: 'ReddiGen'
+        },
+        success_url: `${FRONTEND_URL}/dashboard.html?payment=success&session={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${FRONTEND_URL}/dashboard.html?payment=cancelled`,
+        webhook_url: `${BACKEND_URL}/api/dodo/webhook`
+    }, {
+        headers: {
+            'Authorization': `Bearer ${DODO_API_KEY}`,
+            'Content-Type': 'application/json'
+        }
+    });
+
+    const sessionId = dodoResponse.data.id;
+    console.log('✅ Dodo session created:', sessionId);
+
+    // Store pending transaction in Supabase
+    const { error: dbError } = await supabase
+        .from('payments')
+        .insert([{
+            user_id: userId,
+            transaction_id: transactionId,
+            session_id: sessionId,
+            plan_type: plan,
+            amount: amount,
+            posts_per_month: postsPerMonth,
+            billing_cycle: billingCycle,
+            status: 'pending',
+            customer_email: email,
+            created_at: new Date().toISOString()
+        }]);
+
+    if (dbError) {
+        console.error('❌ Database error:', dbError);
+    }
+
+    res.json({
+        success: true,
+        paymentUrl: dodoResponse.data.url,
+        sessionId: sessionId,
+        message: 'Payment session created successfully'
+    });
+    
+  } catch (error) {
+    console.error('❌ Dodo session error:', error.response?.data || error.message);
+    res.status(500).json({ 
+        success: false, 
+        error: error.response?.data?.message || 'Failed to create payment session'
+    });
+  }
 });
 
 /**
@@ -449,7 +437,7 @@ app.post('/api/dodo/verify-payment', async (req, res) => {
             }
 
             // Update payment status to completed
-            const { error: updateError } = await supabase
+            await supabase
                 .from('payments')
                 .update({
                     status: 'completed',
@@ -458,16 +446,8 @@ app.post('/api/dodo/verify-payment', async (req, res) => {
                 })
                 .eq('session_id', sessionId);
 
-            if (updateError) {
-                console.error('❌ Payment update error:', updateError);
-                return res.status(500).json({ 
-                    success: false, 
-                    error: 'Failed to update payment status'
-                });
-            }
-
             // Update/Create user subscription
-            const { error: userError } = await supabase
+            await supabase
                 .from('user_subscriptions')
                 .upsert({
                     user_id: userId,
@@ -479,10 +459,6 @@ app.post('/api/dodo/verify-payment', async (req, res) => {
                     expires_at: calculateExpiryDate(paymentData.billing_cycle),
                     updated_at: new Date().toISOString()
                 }, { onConflict: 'user_id' });
-
-            if (userError) {
-                console.error('⚠️ Subscription update error:', userError);
-            }
 
             console.log('✅ Payment verified and subscription activated');
 
@@ -529,21 +505,17 @@ app.post('/api/dodo/verify-payment', async (req, res) => {
  * WEBHOOK - Dodo Payment Notifications
  * POST /api/dodo/webhook
  */
-app.post('/api/dodo/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+app.post('/api/dodo/webhook', async (req, res) => {
     try {
-        const signature = req.headers['x-dodo-signature'];
-        const body = req.body.toString();
+        const event = req.body;
         
-        console.log('\n🔔 Webhook received. Signature:', signature?.substring(0, 20) + '...');
-        
-        const event = JSON.parse(body);
-        console.log('Webhook event type:', event.type);
+        console.log('\n🔔 Webhook received:', event.type);
 
         if (event.type === 'checkout.session.completed') {
             const sessionId = event.data.id;
             const paymentId = event.data.payment_id;
 
-            console.log('💰 Payment completed via webhook:', { sessionId, paymentId });
+            console.log('💰 Payment completed:', { sessionId, paymentId });
 
             // Find payment record
             const { data: payment, error: selectError } = await supabase
@@ -725,7 +697,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`\n${'='.repeat(70)}`);
     console.log(`✅ ReddiGen Backend RUNNING!`);
-    console.log(`🎯 Ultra-detailed generation mode + Dodo Payments`);
+    console.log(`🚀 Backend listening on port ${PORT}`);
     console.log(`📝 Features: Reddit API, Gemini AI, Payment Processing`);
     console.log(`💳 Dodo Mode: ${DODO_MODE.toUpperCase()}`);
     console.log(`🌐 Frontend: ${FRONTEND_URL}`);
