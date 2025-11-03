@@ -1,16 +1,23 @@
 {
-  "functions": {
-    "api/checkout.js": {
-      "runtime": "nodejs18.x"
-    },
-    "api/webhook/dodo.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
+  "buildCommand": "echo 'No build needed'",
+  "outputDirectory": ".",
+  
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api/:path*"
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
     }
   ]
 }
