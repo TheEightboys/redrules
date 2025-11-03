@@ -3,7 +3,7 @@
    ============================================ */
 const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8';
-const API_URL = 'https://redditfix-backend.onrender.com';
+const API_URL = 'https://redrules.onrender.com'; // ✅ CORRECT
 
 
 const { createClient } = supabase;
