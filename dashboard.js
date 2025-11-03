@@ -807,56 +807,77 @@ function updatePlanDisplay(planName, billingType) {
 }
 
 async function initiateDodoPayment(plan) {
-    if (!currentUser) {
-        showToast('Please sign in first', 'error');
-        showAuthModal();
-        return;
-    }
-    
-    const billingType = document.querySelector('input[name="billingCycle"]:checked')?.value || 'monthly';
-    const planData = PRICING_DATA[plan][billingType];
-    
     try {
-        showToast('Creating payment link...', 'info');
-
-        // Call your API route (NOT Dodo directly)
-        const response = await fetch('/api/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                plan: plan,
-                billingType: billingType,
-                email: currentUser.email,
-                name: currentUser.email.split('@')[0]
-            })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
-            showToast('Error: ' + (data.error || 'Failed to create payment'), 'error');
+        const userId = auth.currentUser?.uid;
+        const userEmail = auth.currentUser?.email;
+        
+        if (!userId || !userEmail) {
+            alert('Please sign in first');
             return;
         }
 
-        // Store pending purchase
-        localStorage.setItem('pendingPurchase', JSON.stringify({
-            plan: plan,
-            posts: planData.posts,
-            amount: planData.price,
-            billingType: billingType,
-            timestamp: Date.now()
-        }));
+        console.log('🛒 Initiating payment for plan:', plan);
 
-        // Redirect to Dodo
-        if (data.paymentLink) {
-            window.location.href = data.paymentLink;
+        // Plan details
+        const plans = {
+            basic: { 
+                amount: 4.99, 
+                postsPerMonth: 50,
+                billingCycle: 'monthly',
+                name: 'Basic Plan'
+            },
+            pro: { 
+                amount: 9.99, 
+                postsPerMonth: 200,
+                billingCycle: 'monthly',
+                name: 'Pro Plan'
+            }
+        };
+
+        const selectedPlan = plans[plan];
+        if (!selectedPlan) {
+            throw new Error('Invalid plan selected');
+        }
+
+        const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+        // Call YOUR RENDER BACKEND
+        const response = await fetch('https://redrules.onrender.com/api/dodo/create-session', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId: userId,
+                plan: plan,
+                email: userEmail,
+                amount: selectedPlan.amount,
+                postsPerMonth: selectedPlan.postsPerMonth,
+                billingCycle: selectedPlan.billingCycle,
+                transactionId: transactionId
+            })
+        });
+
+        // Handle errors properly
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Backend error:', errorText);
+            throw new Error(`Payment request failed: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ Payment session created:', data);
+
+        if (data.success && data.paymentUrl) {
+            // Redirect to Dodo payment page
+            window.location.href = data.paymentUrl;
         } else {
-            showToast('Could not get payment link', 'error');
+            throw new Error(data.error || 'Failed to create payment session');
         }
 
     } catch (error) {
-        console.error('Error:', error);
-        showToast('Error: ' + error.message, 'error');
+        console.error('❌ Payment error:', error);
+        alert(`Payment failed: ${error.message}`);
     }
 }
 
