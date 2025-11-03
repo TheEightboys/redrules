@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing - ReddiGen</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-body">
+    
+    <!-- Navigation Bar -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom">
+        <div class="container-lg">
+            <a class="navbar-brand fw-bold" href="dashboard.html">
+                <i class="fab fa-reddit-alien text-reddit me-2"></i>ReddiGen
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="dashboard.html">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">Pricing</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="py-5 bg-light text-center">
+        <div class="container-lg">
+            <h1 class="fw-bold mb-3">Simple, Transparent Pricing</h1>
+            <p class="text-muted lead">Choose the perfect plan for your Reddit success</p>
+        </div>
+    </section>
+
+    <!-- Pricing Cards -->
+    <section class="py-5">
+        <div class="container-lg">
+            <div class="row g-4 align-items-center">
+                
+                <!-- FREE PLAN -->
+                <div class="col-lg-4">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body p-4">
+                            <h5 class="card-title fw-bold mb-2">Free</h5>
+                            <div class="mb-4">
+                                <span class="display-4 fw-bold text-success">₹0</span>
+                                <small class="text-muted">/month</small>
+                            </div>
+                            
+                            <ul class="list-unstyled mb-4">
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    <strong>1 Post Per Month</strong>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Basic AI Generation
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Content Optimization
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Reddit Rules Fetching
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-times text-danger me-2"></i>
+                                    <span class="text-muted">Priority Support</span>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-times text-danger me-2"></i>
+                                    <span class="text-muted">Advanced Analytics</span>
+                                </li>
+                            </ul>
+                            
+                            <button class="btn btn-outline-secondary w-100" disabled>
+                                Current Plan
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- STARTER PLAN -->
+                <div class="col-lg-4">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body p-4">
+                            <h5 class="card-title fw-bold mb-2">Starter</h5>
+                            <div class="mb-4">
+                                <span class="display-4 fw-bold text-info">₹149</span>
+                                <small class="text-muted">/month</small>
+                            </div>
+                            
+                            <ul class="list-unstyled mb-4">
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    <strong>15 Posts Per Month</strong>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Enhanced AI Features
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Unlimited Optimization
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Post Scheduling
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-times text-danger me-2"></i>
+                                    <span class="text-muted">Priority Support</span>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-times text-danger me-2"></i>
+                                    <span class="text-muted">Advanced Analytics</span>
+                                </li>
+                            </ul>
+                            
+                            <button class="btn btn-info w-100 fw-bold" onclick="handlePayment('starter', 149)">
+                                <i class="fas fa-arrow-up me-2"></i>Upgrade Now
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- PROFESSIONAL PLAN (POPULAR) -->
+                <div class="col-lg-4">
+                    <div class="card h-100 shadow-lg border-0 position-relative" style="transform: scale(1.05);">
+                        <div class="position-absolute top-0 start-50 translate-middle">
+                            <span class="badge bg-warning text-dark px-3 py-2">MOST POPULAR</span>
+                        </div>
+                        <div class="card-body p-4 pt-5">
+                            <h5 class="card-title fw-bold mb-2">Professional</h5>
+                            <div class="mb-4">
+                                <span class="display-4 fw-bold text-warning">₹299</span>
+                                <small class="text-muted">/month</small>
+                            </div>
+                            
+                            <ul class="list-unstyled mb-4">
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    <strong>50 Posts Per Month</strong>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Advanced AI Models
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Unlimited Optimization
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Post Scheduling
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Priority Support
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Basic Analytics
+                                </li>
+                            </ul>
+                            
+                            <button class="btn btn-warning w-100 fw-bold" onclick="handlePayment('professional', 299)">
+                                <i class="fas fa-rocket me-2"></i>Get Started
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ENTERPRISE PLAN -->
+                <div class="col-lg-4 mx-auto">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body p-4">
+                            <h5 class="card-title fw-bold mb-2">Enterprise</h5>
+                            <div class="mb-4">
+                                <span class="display-4 fw-bold text-danger">₹499</span>
+                                <small class="text-muted">/month</small>
+                            </div>
+                            
+                            <ul class="list-unstyled mb-4">
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    <strong>Unlimited Posts</strong>
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    All Professional Features
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Custom AI Training
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    White Label Support
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    24/7 Premium Support
+                                </li>
+                                <li class="mb-3">
+                                    <i class="fas fa-check text-success me-2"></i>
+                                    Advanced Analytics
+                                </li>
+                            </ul>
+                            
+                            <button class="btn btn-danger w-100 fw-bold" onclick="handlePayment('enterprise', 499)">
+                                <i class="fas fa-crown me-2"></i>Go Enterprise
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Comparison -->
+    <section class="py-5 bg-light">
+        <div class="container-lg">
+            <h2 class="fw-bold text-center mb-5">Plan Comparison</h2>
+            
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th class="text-center">Free</th>
+                            <th class="text-center">Starter</th>
+                            <th class="text-center">Professional</th>
+                            <th class="text-center">Enterprise</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Monthly Posts</strong></td>
+                            <td class="text-center">1</td>
+                            <td class="text-center">15</td>
+                            <td class="text-center">50</td>
+                            <td class="text-center">∞</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Post Generation</strong></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Content Optimization</strong></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Post Scheduling</strong></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Analytics</strong></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Priority Support</strong></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Custom AI Training</strong></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-times text-danger"></i></td>
+                            <td class="text-center"><i class="fas fa-check text-success"></i></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section class="py-5">
+        <div class="container-lg">
+            <h2 class="fw-bold text-center mb-5">Frequently Asked Questions</h2>
+            
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold mb-2">Can I cancel anytime?</h6>
+                            <p class="text-muted">Yes! You can cancel your subscription anytime without any penalties.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold mb-2">What if I need more posts?</h6>
+                            <p class="text-muted">You can upgrade to a higher plan at any time to get more monthly posts.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold mb-2">Do unused posts roll over?</h6>
+                            <p class="text-muted">No, posts reset each month. Use them within your billing period.</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold mb-2">Is there a refund policy?</h6>
+                            <p class="text-muted">We offer a 30-day money-back guarantee if you're not satisfied.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container-lg text-center">
+            <p class="mb-0">&copy; 2025 ReddiGen. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function handlePayment(plan, amount) {
+            alert(`🚀 Upgrading to ${plan.toUpperCase()}!\n\nAmount: ₹${amount}/month\n\nNote: Payment integration coming soon!\n\nIntegrate Razorpay or Stripe here.`);
+            
+            // TODO: Integrate Razorpay/Stripe payment here
+        }
+    </script>
+</body>
+</html>

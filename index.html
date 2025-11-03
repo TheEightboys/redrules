@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReddiGen - Post Smarter on Reddit</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-light bg-white sticky-top">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="#">
+                <i class="fab fa-reddit-alien text-reddit me-2"></i>
+                <span class="fw-bold">ReddiGen</span>
+            </a>
+            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#features">Features</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#how-it-works">How It Works</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#pricing">Pricing</a>
+                    </li>
+                    <li class="nav-item ms-lg-3">
+                        <a class="btn btn-reddit px-4" href="dashboard.html">Get Started</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center g-5">
+                <div class="col-lg-6">
+                    <div class="hero-badge mb-3">
+                        <i class="fas fa-sparkles me-2"></i>AI-Powered Content Optimization
+                    </div>
+                    <h1 class="hero-title mb-4">Post Smarter on <span class="text-reddit">Reddit</span></h1>
+                    <p class="hero-subtitle mb-4">Select your subreddit, customize your content, and let AI generate perfect posts that follow all guidelines.</p>
+                    <div class="d-flex gap-3 mb-5">
+                        <a href="dashboard.html" class="btn btn-reddit btn-lg px-4">
+                            Get Started Free
+                        </a>
+                        <a href="#how-it-works" class="btn btn-outline-dark btn-lg px-4">
+                            Learn More
+                        </a>
+                    </div>
+                    <div class="hero-stats">
+                        <div class="stat-item">
+                            <div class="stat-number">10K+</div>
+                            <div class="stat-label">Posts Optimized</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-item">
+                            <div class="stat-number">98%</div>
+                            <div class="stat-label">Approval Rate</div>
+                        </div>
+                        <div class="stat-divider"></div>
+                        <div class="stat-item">
+                            <div class="stat-number">5.0</div>
+                            <div class="stat-label">User Rating</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="hero-illustration">
+                        <svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="250" cy="250" r="200" fill="#fff8f5" opacity="0.5"/>
+                            <ellipse cx="250" cy="280" rx="100" ry="90" fill="#ff4500"/>
+                            <circle cx="250" cy="200" r="70" fill="#ff4500"/>
+                            <circle cx="230" cy="195" r="15" fill="white"/>
+                            <circle cx="270" cy="195" r="15" fill="white"/>
+                            <circle cx="232" cy="195" r="8" fill="#1a1a1a"/>
+                            <circle cx="272" cy="195" r="8" fill="#1a1a1a"/>
+                            <path d="M 230 215 Q 250 225 270 215" stroke="#1a1a1a" stroke-width="3" fill="none" stroke-linecap="round"/>
+                            <line x1="250" y1="130" x2="250" y2="100" stroke="#ff4500" stroke-width="4"/>
+                            <circle cx="250" cy="95" r="10" fill="#ff4500"/>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header text-center mb-5">
+                <h2 class="section-title">Powerful Features</h2>
+                <p class="section-subtitle">Everything you need to succeed on Reddit</p>
+            </div>
+            
+            <div class="row g-4">
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-reddit-light">
+                            <i class="fas fa-search text-reddit"></i>
+                        </div>
+                        <h4 class="feature-title">Select Subreddit</h4>
+                        <p class="feature-text">Choose any subreddit and instantly fetch its posting guidelines</p>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-success-light">
+                            <i class="fas fa-sliders-h text-success"></i>
+                        </div>
+                        <h4 class="feature-title">Customize Content</h4>
+                        <p class="feature-text">Add your topic, choose style, and set the tone you want</p>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-warning-light">
+                            <i class="fas fa-wand-magic-sparkles text-warning"></i>
+                        </div>
+                        <h4 class="feature-title">AI Generates</h4>
+                        <p class="feature-text">Get perfect posts that follow all guidelines automatically</p>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-info-light">
+                            <i class="fas fa-history text-info"></i>
+                        </div>
+                        <h4 class="feature-title">Post History</h4>
+                        <p class="feature-text">Track all your generated posts in one place</p>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-purple-light">
+                            <i class="fas fa-palette text-purple"></i>
+                        </div>
+                        <h4 class="feature-title">Multiple Styles</h4>
+                        <p class="feature-text">Casual, formal, question-based, or discussion starter</p>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="feature-card">
+                        <div class="feature-icon bg-danger-light">
+                            <i class="fas fa-bolt text-danger"></i>
+                        </div>
+                        <h4 class="feature-title">Lightning Fast</h4>
+                        <p class="feature-text">Get results in seconds, not minutes</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-it-works-section">
+        <div class="container">
+            <div class="section-header text-center mb-5">
+                <h2 class="section-title">How It Works</h2>
+                <p class="section-subtitle">Three simple steps to create perfect Reddit posts</p>
+            </div>
+            
+            <div class="row g-5">
+                <div class="col-lg-4">
+                    <div class="step-card">
+                        <div class="step-number">1</div>
+                        <div class="step-icon">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h4 class="step-title">Select Your Subreddit</h4>
+                        <p class="step-text">Choose the target subreddit and our AI will analyze its rules, tone, and community guidelines</p>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="step-card">
+                        <div class="step-number">2</div>
+                        <div class="step-icon">
+                            <i class="fas fa-sliders-h"></i>
+                        </div>
+                        <h4 class="step-title">Customize Your Content</h4>
+                        <p class="step-text">Provide your topic, key points, and preferred tone. Adjust settings to match your goals</p>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="step-card">
+                        <div class="step-number">3</div>
+                        <div class="step-icon">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <h4 class="step-title">Generate & Publish</h4>
+                        <p class="step-text">Review AI-generated posts, make any final tweaks, and publish with confidence</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing-section">
+        <div class="container">
+            <div class="section-header text-center mb-5">
+                <h2 class="section-title">Simple Pricing</h2>
+                <p class="section-subtitle">Choose the perfect plan</p>
+            </div>
+            
+            <div class="row g-4 justify-content-center">
+                <div class="col-lg-4">
+                    <div class="pricing-card">
+                        <div class="pricing-header">
+                            <h4 class="pricing-name">Free</h4>
+                            <div class="pricing-price">
+                                <span class="price-amount">$0</span>
+                                <span class="price-period">/month</span>
+                            </div>
+                        </div>
+                        <ul class="pricing-features">
+                            <li><i class="fas fa-check"></i>10 posts per month</li>
+                            <li><i class="fas fa-check"></i>All features</li>
+                            <li><i class="fas fa-check"></i>Post history</li>
+                            <li><i class="fas fa-check"></i>Basic support</li>
+                        </ul>
+                        <a href="dashboard.html" class="btn btn-outline-reddit w-100">Get Started</a>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="pricing-card featured">
+                        <div class="pricing-badge">Most Popular</div>
+                        <div class="pricing-header">
+                            <h4 class="pricing-name">Pro</h4>
+                            <div class="pricing-price">
+                                <span class="price-amount">$9</span>
+                                <span class="price-period">/month</span>
+                            </div>
+                        </div>
+                        <ul class="pricing-features">
+                            <li><i class="fas fa-check"></i>Unlimited posts</li>
+                            <li><i class="fas fa-check"></i>Priority processing</li>
+                            <li><i class="fas fa-check"></i>Advanced analytics</li>
+                            <li><i class="fas fa-check"></i>Priority support</li>
+                        </ul>
+                        <a href="dashboard.html" class="btn btn-reddit w-100">Start Free Trial</a>
+                    </div>
+                </div>
+                
+                <div class="col-lg-4">
+                    <div class="pricing-card">
+                        <div class="pricing-header">
+                            <h4 class="pricing-name">Enterprise</h4>
+                            <div class="pricing-price">
+                                <span class="price-amount">$29</span>
+                                <span class="price-period">/month</span>
+                            </div>
+                        </div>
+                        <ul class="pricing-features">
+                            <li><i class="fas fa-check"></i>Everything in Pro</li>
+                            <li><i class="fas fa-check"></i>Team collaboration</li>
+                            <li><i class="fas fa-check"></i>API access</li>
+                            <li><i class="fas fa-check"></i>Dedicated support</li>
+                        </ul>
+                        <a href="dashboard.html" class="btn btn-outline-reddit w-100">Contact Sales</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="cta-content text-center">
+                <h2 class="cta-title mb-3">Ready to Master Reddit?</h2>
+                <p class="cta-text mb-4">Join thousands creating perfect posts in seconds</p>
+                <a href="dashboard.html" class="btn btn-light btn-lg px-5">Get Started Free</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-4">
+                    <div class="footer-brand mb-3">
+                        <i class="fab fa-reddit-alien me-2"></i>
+                        <span>ReddiGen</span>
+                    </div>
+                    <p class="footer-text">AI-powered Reddit post optimizer for creating compliant, engaging content.</p>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <h6 class="footer-heading">Product</h6>
+                    <ul class="footer-links">
+                        <li><a href="#features">Features</a></li>
+                        <li><a href="#pricing">Pricing</a></li>
+                        <li><a href="#">API</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <h6 class="footer-heading">Company</h6>
+                    <ul class="footer-links">
+                        <li><a href="#">About</a></li>
+                        <li><a href="#">Blog</a></li>
+                        <li><a href="#">Careers</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <h6 class="footer-heading">Legal</h6>
+                    <ul class="footer-links">
+                        <li><a href="#">Privacy</a></li>
+                        <li><a href="#">Terms</a></li>
+                        <li><a href="#">Cookies</a></li>
+                    </ul>
+                </div>
+                <div class="col-lg-2 col-6">
+                    <h6 class="footer-heading">Resources</h6>
+                    <ul class="footer-links">
+                        <li><a href="#">Docs</a></li>
+                        <li><a href="#">GitHub</a></li>
+                        <li><a href="#">Support</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 ReddiGen. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "api/checkout.js": {
+      "runtime": "nodejs18.x"
+    },
+    "api/webhook/dodo.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/:path*"
+    }
+  ]
+}
