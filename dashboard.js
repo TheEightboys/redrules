@@ -8,10 +8,10 @@ const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // ============================================
 // GLOBAL VARIABLES
 // ============================================
-// At the top of dashboard.js, change this line:
 const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:3000'  // Your local backend
-    : 'https://redrules.onrender.com';  // Production backend
+    ? 'http://localhost:3000'
+    : 'https://redrules.onrender.com';
+
 let currentUser = null;
 let userCredits = 10;
 let userPostHistory = [];
@@ -53,29 +53,28 @@ const PRICING_DATA = {
 };
 
 // ============================================
-// INITIALIZE ON PAGE LOAD - FIXED ORDER
+// INITIALIZE ON PAGE LOAD
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('✅ Dashboard loading...');
     
     try {
-        // STEP 1: Check for payment success FIRST (before loading user data)
-        const paymentProcessed = await handlePaymentSuccess();
-        
-        // STEP 2: Check authentication
+        // Check authentication first
         const { data: { session } } = await supabaseClient.auth.getSession();
         
         if (session) {
             currentUser = session.user;
             
-            // STEP 3: Load user data (this will load the updated plan if payment was successful)
-            if (!paymentProcessed) {
-                // Only load from storage if payment wasn't just processed
-                loadUserPlan();
-                loadUserData();
-            }
+            // Check for payment success
+            await handlePaymentSuccess();
             
-            // STEP 4: Update UI
+            // Load user plan from Supabase
+            await loadUserPlanFromDatabase();
+            
+            // Load history from localStorage
+            loadUserData();
+            
+            // Update UI
             hideAuthModal();
             updateUIAfterAuth();
             updateStatsDisplay();
@@ -87,11 +86,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             showAuthModal();
         }
         
-        // STEP 5: Initialize event listeners
+        // Initialize event listeners
         initializeEventListeners();
         setupPricingToggle();
         
-        // STEP 6: Hide loading screen
+        // Hide loading screen
         setTimeout(() => {
             const loadingScreen = document.getElementById('loadingScreen');
             if (loadingScreen) loadingScreen.classList.add('hidden');
@@ -101,11 +100,110 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('❌ Initialization error:', error);
         showToast('Error loading dashboard: ' + error.message, 'error');
         
-        // Hide loading screen even on error
         const loadingScreen = document.getElementById('loadingScreen');
         if (loadingScreen) loadingScreen.classList.add('hidden');
     }
 });
+
+// ============================================
+// LOAD USER PLAN FROM DATABASE
+// ============================================
+async function loadUserPlanFromDatabase() {
+    if (!currentUser) return;
+    
+    try {
+        console.log('📊 Loading plan from database for:', currentUser.id);
+        
+        const response = await fetch(`${API_URL}/api/user/plan/${currentUser.id}`);
+        const data = await response.json();
+        
+        if (data.success && data.hasPlan) {
+            userPlan = data.plan;
+            userCredits = data.plan.credits;
+            
+            console.log('✅ Plan loaded from database:', userPlan);
+            console.log('✅ Credits:', userCredits);
+        } else {
+            // No plan found - use free tier
+            resetPlanToFree();
+            console.log('ℹ️ No plan found, using free tier');
+        }
+        
+    } catch (error) {
+        console.error('❌ Error loading plan from database:', error);
+        resetPlanToFree();
+    }
+}
+
+// ============================================
+// SAVE PLAN TO DATABASE
+// ============================================
+async function savePlanToDatabase(planData) {
+    if (!currentUser) return;
+    
+    try {
+        console.log('💾 Saving plan to database:', planData);
+        
+        const response = await fetch(`${API_URL}/api/user/plan`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: currentUser.id,
+                planType: planData.plan,
+                postsPerMonth: planData.posts,
+                credits: planData.posts,
+                billingCycle: planData.billingType,
+                amount: planData.amount
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('✅ Plan saved to database successfully');
+            return true;
+        } else {
+            console.error('❌ Failed to save plan:', data.error);
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error saving plan to database:', error);
+        return false;
+    }
+}
+
+// ============================================
+// DEDUCT CREDIT (UPDATE DATABASE)
+// ============================================
+async function deductCreditFromDatabase() {
+    if (!currentUser) return false;
+    
+    try {
+        const response = await fetch(`${API_URL}/api/user/plan/deduct-credit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: currentUser.id })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            userCredits = data.creditsRemaining;
+            userPlan.credits = userCredits;
+            updateCreditsDisplay();
+            updateStatsDisplay();
+            return true;
+        } else {
+            showToast(data.error || 'Failed to deduct credit', 'error');
+            return false;
+        }
+        
+    } catch (error) {
+        console.error('❌ Error deducting credit:', error);
+        return false;
+    }
+}
 
 // ============================================
 // AUTHENTICATION FUNCTIONS
@@ -131,11 +229,16 @@ async function handleLogin(e) {
         
         currentUser = data.user;
         hideAuthModal();
-        loadUserPlan();
+        
+        // Load plan from database
+        await loadUserPlanFromDatabase();
         loadUserData();
+        
         updateUIAfterAuth();
         updateStatsDisplay();
         updateCreditsDisplay();
+        updatePlanUI();
+        
         showToast('Welcome back!', 'success');
     } catch (error) {
         showToast('Login failed: ' + error.message, 'error');
@@ -223,13 +326,11 @@ function navigateToPage(pageName) {
 // EVENT LISTENERS
 // ============================================
 function initializeEventListeners() {
-    // Login/Signup
     document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
     document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
     document.getElementById('signOutBtn')?.addEventListener('click', handleSignOut);
     document.getElementById('dropdownSignOutBtn')?.addEventListener('click', handleSignOut);
     
-    // Toggle between login and signup
     document.getElementById('showSignupLink')?.addEventListener('click', (e) => {
         e.preventDefault();
         document.getElementById('emailAuthSection').style.display = 'none';
@@ -242,7 +343,6 @@ function initializeEventListeners() {
         document.getElementById('emailAuthSection').style.display = 'block';
     });
     
-    // Sidebar navigation
     document.querySelectorAll('.sidebar-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -251,7 +351,6 @@ function initializeEventListeners() {
         });
     });
     
-    // Dropdown navigation
     document.querySelectorAll('.dropdown-item[data-page]').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -260,21 +359,18 @@ function initializeEventListeners() {
         });
     });
     
-    // AI Generator
     document.getElementById('aiGenerateBtn')?.addEventListener('click', handleAIGenerate);
     document.getElementById('aiFetchGuidelinesBtn')?.addEventListener('click', () => {
         const subreddit = document.getElementById('aiSubredditInput').value.trim();
         if (subreddit) fetchAndDisplayGuidelines(subreddit, 'ai');
     });
     
-    // Content Optimizer
     document.getElementById('optimizerOptimizeBtn')?.addEventListener('click', handleOptimizePost);
     document.getElementById('optimizerFetchGuidelinesBtn')?.addEventListener('click', () => {
         const subreddit = document.getElementById('optimizerSubredditInput').value.trim();
         if (subreddit) fetchAndDisplayGuidelines(subreddit, 'optimizer');
     });
     
-    // Copy buttons
     document.getElementById('aiCopyBtn')?.addEventListener('click', () => {
         copyToClipboard('aiGeneratedText');
     });
@@ -282,7 +378,6 @@ function initializeEventListeners() {
         copyToClipboard('optimizerOptimizedText');
     });
     
-    // Sidebar toggle for mobile
     document.getElementById('sidebarToggle')?.addEventListener('click', () => {
         document.getElementById('sidebar')?.classList.toggle('active');
     });
@@ -330,7 +425,11 @@ async function handleAIGenerate() {
         const generatedPost = data.post || data.generatedPost;
         if (!generatedPost) throw new Error('AI returned no content.');
         
-        deductCredit();
+        // Deduct credit from database
+        const deducted = await deductCreditFromDatabase();
+        if (!deducted) {
+            throw new Error('Failed to deduct credit');
+        }
         
         document.getElementById('aiGeneratedText').innerHTML = `<div style="white-space: pre-wrap; line-height: 1.6;">${generatedPost}</div>`;
         document.getElementById('aiTargetSubreddit').textContent = subreddit;
@@ -392,7 +491,11 @@ async function handleOptimizePost() {
         const optimizedPost = data.post || data.optimizedPost;
         if (!optimizedPost) throw new Error('AI returned no content.');
 
-        deductCredit();
+        // Deduct credit from database
+        const deducted = await deductCreditFromDatabase();
+        if (!deducted) {
+            throw new Error('Failed to deduct credit');
+        }
         
         document.getElementById('optimizerOptimizedText').innerHTML = `<div style="white-space: pre-wrap; line-height: 1.6;">${optimizedPost}</div>`;
         document.getElementById('optimizerTargetSubreddit').textContent = subreddit;
@@ -415,13 +518,9 @@ async function handleOptimizePost() {
 // ============================================
 // REDDIT RULES FETCHING
 // ============================================
-// ============================================
-// REDDIT RULES FETCHING - FIXED
-// ============================================
 async function fetchRedditRulesDirectAPI(subreddit) {
     try {
-        // ALWAYS use your backend API - never call Reddit directly
-        const response = await fetch(`https://redrules.onrender.com/api/reddit-rules/${subreddit}`);
+        const response = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
         
         if (!response.ok) {
             const errorData = await response.json();
@@ -443,6 +542,7 @@ async function fetchRedditRulesDirectAPI(subreddit) {
         throw new Error(`Subreddit r/${subreddit} not found or is private`);
     }
 }
+
 async function fetchAndDisplayGuidelines(subreddit, type) {
     const btn = document.getElementById(`${type}FetchGuidelinesBtn`);
     const originalText = btn.innerHTML;
@@ -474,194 +574,224 @@ async function fetchAndDisplayGuidelines(subreddit, type) {
 }
 
 // ============================================
-// PAYMENT FUNCTIONS - FIXED
+// PAYMENT FUNCTIONS
+// ============================================
+// ============================================
+// PAYMENT FUNCTIONS
 // ============================================
 async function initiateDodoPayment(planType) {
     try {
-        console.log('🚀 Initiating payment for:', planType);
+        console.log('🚀 Initiating payment for plan:', planType);
         
-        const loadingScreen = document.getElementById('loadingScreen');
-        if (loadingScreen) loadingScreen.style.display = 'flex';
-
+        // Get billing cycle
+        const billingCycle = document.querySelector('input[name="billingCycle"]:checked')?.value || 'monthly';
+        
+        // Get user session
         const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
         
-        if (sessionError || !session?.user) {
-            console.error('❌ User not authenticated');
+        if (sessionError || !session || !session.user) {
             showToast('Please log in to purchase a plan', 'error');
-            if (loadingScreen) loadingScreen.style.display = 'none';
             showAuthModal();
             return;
         }
-
-        const billingCycle = document.querySelector('input[name="billingCycle"]:checked')?.value || 'monthly';
-        const planData = PRICING_DATA[planType][billingCycle];
-
-        const purchaseData = {
-            plan: planType,
-            posts: planData.posts,
-            amount: planData.price,
-            billingType: billingCycle,
-            timestamp: Date.now(),
-            userId: session.user.id,
-            userEmail: session.user.email
-        };
         
-        localStorage.setItem('pendingPurchase', JSON.stringify(purchaseData));
-
-        const YOUR_DOMAIN = window.location.origin;
-        const successUrl = encodeURIComponent(`${YOUR_DOMAIN}/dashboard.html?payment=success`);
-        const cancelUrl = encodeURIComponent(`${YOUR_DOMAIN}/dashboard.html?payment=cancelled`);
-
-        const paymentLink = DODO_PAYMENT_LINKS[`${planType}_${billingCycle}`];
+        const userId = session.user.id;
+        const userEmail = session.user.email;
         
-        if (!paymentLink) {
-            throw new Error('Payment link not found for this plan');
+        // Get pricing data
+        const pricingData = PRICING_DATA[planType][billingCycle];
+        if (!pricingData) {
+            showToast('Invalid plan selected', 'error');
+            return;
         }
-
-        const paymentUrl = `${paymentLink}?quantity=1&redirect_url=${successUrl}&cancel_url=${cancelUrl}`;
         
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Get payment link
+        const paymentLinkKey = `${planType}_${billingCycle}`;
+        const paymentUrl = DODO_PAYMENT_LINKS[paymentLinkKey];
+        
+        if (!paymentUrl) {
+            showToast('Payment link not found', 'error');
+            console.error('Missing payment link for:', paymentLinkKey);
+            return;
+        }
+        
+        // Save pending payment to database
+        const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+        
+        const savePending = await fetch(`${API_URL}/api/user/plan/pending`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: userId,
+                planType: planType,
+                postsPerMonth: pricingData.posts,
+                billingCycle: billingCycle,
+                amount: pricingData.price,
+                transactionId: transactionId,
+                customerEmail: userEmail
+            })
+        });
+        
+        if (!savePending.ok) {
+            console.error('Failed to save pending payment');
+        }
+        
+        // Redirect to Dodo payment page
+        console.log('✅ Redirecting to payment page:', paymentUrl);
         window.location.href = paymentUrl;
-
+        
     } catch (error) {
         console.error('❌ Payment error:', error);
         showToast('Payment failed: ' + error.message, 'error');
-        const loadingScreen = document.getElementById('loadingScreen');
-        if (loadingScreen) loadingScreen.style.display = 'none';
     }
 }
 
+// ============================================
+// HANDLE PAYMENT SUCCESS
+// ============================================
 async function handlePaymentSuccess() {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentStatus = urlParams.get('payment');
     
     if (paymentStatus === 'success') {
-        const pendingPurchase = localStorage.getItem('pendingPurchase');
+        console.log('✅ Payment success detected!');
         
-        if (pendingPurchase) {
-            try {
-                const purchase = JSON.parse(pendingPurchase);
-                const purchaseAge = Date.now() - purchase.timestamp;
-                
-                if (purchaseAge > 24 * 60 * 60 * 1000) {
-                    throw new Error('Purchase session expired. Please contact support.');
-                }
-                
-                console.log('✅ Processing successful payment:', purchase);
-                
-                // Activate the plan IMMEDIATELY
-                activatePlan(purchase);
-                
-                // Show success message
-                showToast(`🎉 Payment successful! ${purchase.posts} posts added to your ${purchase.plan} plan!`, 'success');
-                createConfetti();
-                
-                // Clean up
-                localStorage.removeItem('pendingPurchase');
-                window.history.replaceState({}, document.title, window.location.pathname);
-                
-                // Navigate after a short delay
-                setTimeout(() => {
-                    navigateToPage('aiGenerator');
-                }, 2000);
-                
-                return true; // Indicates payment was processed
-                
-            } catch (error) {
-                console.error('❌ Error processing payment:', error);
-                showToast('Error processing payment: ' + error.message, 'error');
-                localStorage.removeItem('pendingPurchase');
-            }
-        }
+        showToast('🎉 Payment successful! Activating your plan...', 'success');
+        
+        // Wait a moment for webhook to process
+        setTimeout(async () => {
+            // Reload plan from database
+            await loadUserPlanFromDatabase();
+            updatePlanUI();
+            updateCreditsDisplay();
+            
+            showToast('✅ Your plan is now active!', 'success');
+            
+            // Remove payment params from URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            // Navigate to AI Generator
+            navigateToPage('aiGenerator');
+            
+        }, 2000);
     } else if (paymentStatus === 'cancelled') {
-        showToast('Payment was cancelled', 'info');
-        localStorage.removeItem('pendingPurchase');
+        showToast('Payment was cancelled', 'warning');
         window.history.replaceState({}, document.title, window.location.pathname);
     }
-    
-    return false; // No payment processed
 }
 
-function activatePlan(purchase) {
-    console.log('🎯 Activating plan:', purchase);
+// ============================================
+// PRICING PLAN FUNCTIONS
+// ============================================
+function setupPricingToggle() {
+    const monthlyBtn = document.getElementById('monthlyBtn');
+    const yearlyBtn = document.getElementById('yearlyBtn');
     
-    const planDetails = {
-        starter: { name: 'Starter', tier: 'starter', credits: 150, postsPerMonth: 150 },
-        professional: { name: 'Professional', tier: 'professional', credits: 250, postsPerMonth: 250 },
-        enterprise: { name: 'Enterprise', tier: 'enterprise', credits: 500, postsPerMonth: 500 }
-    };
-    
-    const plan = planDetails[purchase.plan];
-    if (!plan) {
-        console.error('❌ Invalid plan:', purchase.plan);
-        return;
-    }
-    
-    const expiryDate = new Date();
-    if (purchase.billingType === 'yearly') {
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-    } else {
-        expiryDate.setMonth(expiryDate.getMonth() + 1);
-    }
-    
-    // Update global plan
-    userPlan = {
-        ...plan,
-        billingType: purchase.billingType,
-        amount: purchase.amount,
-        activated: true,
-        activatedDate: new Date().toISOString(),
-        expiryDate: expiryDate.toISOString()
-    };
-    
-    // Update credits
-    userCredits = plan.credits;
-    
-    // Save IMMEDIATELY to localStorage
-    savePlanToStorage();
-    saveToLocalStorage();
-    
-    console.log('✅ Plan activated:', userPlan);
-    console.log('✅ Credits set to:', userCredits);
-    
-    // Update UI if DOM is ready
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-        updateStatsDisplay();
-        updateCreditsDisplay();
-        updatePlanUI();
+    if (monthlyBtn && yearlyBtn) {
+        monthlyBtn.addEventListener('click', () => {
+            monthlyBtn.classList.add('active');
+            yearlyBtn.classList.remove('active');
+            updatePricingDisplay('monthly');
+        });
+        
+        yearlyBtn.addEventListener('click', () => {
+            yearlyBtn.classList.add('active');
+            monthlyBtn.classList.remove('active');
+            updatePricingDisplay('yearly');
+        });
     }
 }
 
-function loadUserPlan() {
-    const savedPlan = localStorage.getItem('userPlan');
-    
-    if (savedPlan) {
-        try {
-            const parsed = JSON.parse(savedPlan);
-            
-            // Check if plan expired
-            if (parsed.expiryDate && new Date(parsed.expiryDate) < new Date()) {
-                console.log('⚠️ Plan expired, resetting to free');
-                resetPlanToFree();
-                showToast('Your plan has expired. Reset to free tier.', 'info');
-                return;
-            }
-            
-            // Load the plan
-            userPlan = parsed;
-            userCredits = userPlan.credits || userPlan.postsPerMonth || 10;
-            
-            console.log('✅ Loaded plan from storage:', userPlan);
-            console.log('✅ Credits loaded:', userCredits);
-            
-        } catch (error) {
-            console.error('❌ Error loading plan:', error);
-            resetPlanToFree();
+function updatePricingDisplay(billingCycle) {
+    Object.keys(PRICING_DATA).forEach(planKey => {
+        const planData = PRICING_DATA[planKey][billingCycle];
+        const priceElement = document.getElementById(`${planKey}Price`);
+        const postsElement = document.getElementById(`${planKey}Posts`);
+        
+        if (priceElement) {
+            priceElement.textContent = `$${planData.price}`;
         }
-    } else {
-        console.log('ℹ️ No saved plan, using free tier');
-        resetPlanToFree();
+        if (postsElement) {
+            postsElement.textContent = `${planData.posts} posts/${billingCycle === 'yearly' ? 'year' : 'month'}`;
+        }
+    });
+}
+
+// ============================================
+// UI UPDATE FUNCTIONS
+// ============================================
+function updateUIAfterAuth() {
+    const userName = currentUser?.email?.split('@')[0] || 'User';
+    
+    const userNameElements = document.querySelectorAll('.user-name');
+    userNameElements.forEach(el => {
+        el.textContent = userName;
+    });
+    
+    const userEmailElements = document.querySelectorAll('.user-email');
+    userEmailElements.forEach(el => {
+        el.textContent = currentUser?.email || '';
+    });
+    
+    console.log('✅ UI updated for authenticated user');
+}
+
+function updateStatsDisplay() {
+    const totalPostsElement = document.getElementById('totalPosts');
+    const creditsLeftElement = document.getElementById('creditsLeft');
+    const planNameElement = document.getElementById('planName');
+    
+    if (totalPostsElement) {
+        totalPostsElement.textContent = userPostHistory.length;
     }
+    if (creditsLeftElement) {
+        creditsLeftElement.textContent = userCredits;
+    }
+    if (planNameElement) {
+        planNameElement.textContent = userPlan.name;
+    }
+}
+
+function updateCreditsDisplay() {
+    const creditsElements = document.querySelectorAll('.credits-display, .user-credits');
+    creditsElements.forEach(el => {
+        el.textContent = userCredits;
+    });
+    
+    console.log('💾 Saved credits to localStorage:', userCredits);
+}
+
+function updatePlanUI() {
+    const planBadge = document.getElementById('currentPlanBadge');
+    const planNameElement = document.getElementById('planName');
+    
+    if (planBadge) {
+        planBadge.textContent = userPlan.name;
+        planBadge.className = 'badge';
+        
+        if (userPlan.tier === 'free') {
+            planBadge.classList.add('bg-secondary');
+        } else if (userPlan.tier === 'starter') {
+            planBadge.classList.add('bg-primary');
+        } else if (userPlan.tier === 'professional') {
+            planBadge.classList.add('bg-success');
+        } else if (userPlan.tier === 'enterprise') {
+            planBadge.classList.add('bg-warning');
+        }
+    }
+    
+    if (planNameElement) {
+        planNameElement.textContent = userPlan.name;
+    }
+    
+    console.log('🎯 Plan UI updated:', userPlan);
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
+function hasCreditsLeft() {
+    return userCredits > 0;
 }
 
 function resetPlanToFree() {
@@ -671,209 +801,70 @@ function resetPlanToFree() {
         credits: 10,
         postsPerMonth: 10,
         monthlyLimit: 10,
+        features: [],
         activated: false
     };
-    
     userCredits = 10;
-    savePlanToStorage();
-}
-
-function savePlanToStorage() {
-    // Save both plan and credits
-    const dataToSave = {
-        ...userPlan,
-        credits: userCredits // Ensure credits are always in sync
-    };
-    
-    localStorage.setItem('userPlan', JSON.stringify(dataToSave));
-    localStorage.setItem('userCredits', userCredits.toString());
-    
-    console.log('💾 Saved to storage:', dataToSave);
-}
-
-function updatePlanUI() {
-    const planBadge = document.querySelector('.credits-display');
-    if (planBadge) {
-        let bgColor = 'secondary';
-        if (userPlan.tier === 'starter') bgColor = 'info';
-        if (userPlan.tier === 'professional') bgColor = 'warning';
-        if (userPlan.tier === 'enterprise') bgColor = 'danger';
-        
-        planBadge.innerHTML = `
-            <span class="badge bg-${bgColor} mb-1">${userPlan.name.toUpperCase()}</span><br>
-            <small>${userCredits} Credits Left</small>
-        `;
-    }
-    
-    updateCreditsDisplay();
-}
-
-function hasCreditsLeft() {
-    return userCredits > 0;
-}
-
-function deductCredit() {
-    if (hasCreditsLeft()) {
-        userCredits--;
-        userPlan.credits = userCredits;
-        savePlanToStorage();
-        saveToLocalStorage();
-        updateCreditsDisplay();
-        updateStatsDisplay();
-        return true;
-    } else {
-        showToast('No credits left! Please upgrade your plan.', 'error');
-        return false;
-    }
-}
-
-function setupPricingToggle() {
-    const toggleInputs = document.querySelectorAll('input[name="billingCycle"]');
-    toggleInputs.forEach(input => {
-        input.addEventListener('change', updatePricingDisplay);
-    });
-    updatePricingDisplay();
-}
-
-function updatePricingDisplay() {
-    const isYearly = document.getElementById('yearlyBilling')?.checked;
-    const cycle = isYearly ? 'yearly' : 'monthly';
-    
-    Object.keys(PRICING_DATA).forEach(plan => {
-        const data = PRICING_DATA[plan][cycle];
-        const priceEl = document.getElementById(`${plan}Price`);
-        const billingEl = document.getElementById(`${plan}Billing`);
-        const postsEl = document.getElementById(`${plan}Posts`);
-        
-        if (priceEl) priceEl.textContent = `$${data.price}`;
-        if (billingEl) billingEl.textContent = isYearly ? '/year' : '/month';
-        if (postsEl) postsEl.textContent = `${data.posts} Posts Per ${isYearly ? 'Year' : 'Month'}`;
-    });
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-function updateUIAfterAuth() {
-    if (currentUser) {
-        const userName = currentUser.email.split('@')[0];
-        
-        const dropdownUserName = document.getElementById('dropdownUserName');
-        const dropdownUserEmail = document.getElementById('dropdownUserEmail');
-        const profileName = document.getElementById('profileName');
-        const profileEmail = document.getElementById('profileEmail');
-        const settingsEmail = document.getElementById('settingsEmail');
-        
-        if (dropdownUserName) dropdownUserName.textContent = userName;
-        if (dropdownUserEmail) dropdownUserEmail.textContent = currentUser.email;
-        if (profileName) profileName.textContent = userName;
-        if (profileEmail) profileEmail.textContent = currentUser.email;
-        if (settingsEmail) settingsEmail.value = currentUser.email;
-    }
 }
 
 function loadUserData() {
     const savedHistory = localStorage.getItem('userPostHistory');
-    
     if (savedHistory) {
-        try {
-            userPostHistory = JSON.parse(savedHistory);
-        } catch (e) {
-            console.error('Error loading history:', e);
-            userPostHistory = [];
-        }
+        userPostHistory = JSON.parse(savedHistory);
     }
-}
-
-function saveToLocalStorage() {
-    localStorage.setItem('userCredits', userCredits.toString());
-    localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
 }
 
 function saveToHistory(subreddit, input, output, type) {
-    const entry = {
+    const historyItem = {
         id: Date.now(),
-        date: new Date().toISOString(),
-        subreddit,
-        input,
-        output,
-        type
+        subreddit: subreddit,
+        input: input,
+        output: output,
+        type: type,
+        timestamp: new Date().toISOString()
     };
     
-    userPostHistory.unshift(entry);
-    if (userPostHistory.length > 50) userPostHistory.pop();
+    userPostHistory.unshift(historyItem);
     
-    saveToLocalStorage();
+    if (userPostHistory.length > 50) {
+        userPostHistory = userPostHistory.slice(0, 50);
+    }
+    
+    localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
     displayHistory();
+    updateStatsDisplay();
 }
 
 function displayHistory() {
-    const tbody = document.getElementById('historyTableBody');
-    if (!tbody) return;
+    const historyContainer = document.getElementById('historyContainer');
+    if (!historyContainer) return;
     
     if (userPostHistory.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="5" class="text-center text-muted py-5">
-                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
-                    No posts yet. Start generating!
-                </td>
-            </tr>
-        `;
+        historyContainer.innerHTML = '<p class="text-center text-muted">No posts generated yet.</p>';
         return;
     }
     
-    tbody.innerHTML = userPostHistory.map(entry => `
-        <tr>
-            <td>${new Date(entry.date).toLocaleDateString()}</td>
-            <td><span class="badge bg-reddit">r/${entry.subreddit}</span></td>
-            <td class="text-truncate" style="max-width: 300px;">${entry.output.substring(0, 100)}...</td>
-            <td><span class="badge bg-${entry.type === 'ai-generated' ? 'primary' : 'success'}">${entry.type}</span></td>
-            <td>
-                <button class="btn btn-sm btn-outline-secondary" onclick="viewHistoryEntry(${entry.id})">
-                    <i class="fas fa-eye"></i>
-                </button>
-            </td>
-        </tr>
+    historyContainer.innerHTML = userPostHistory.map(item => `
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title">r/${item.subreddit}</h5>
+                    <span class="badge bg-${item.type === 'ai-generated' ? 'primary' : 'success'}">
+                        ${item.type === 'ai-generated' ? 'AI Generated' : 'Optimized'}
+                    </span>
+                </div>
+                <p class="text-muted small mb-2">${new Date(item.timestamp).toLocaleString()}</p>
+                <div class="mb-2">
+                    <strong>Input:</strong>
+                    <p class="mb-1">${item.input}</p>
+                </div>
+                <div>
+                    <strong>Output:</strong>
+                    <div style="white-space: pre-wrap; line-height: 1.6;">${item.output}</div>
+                </div>
+            </div>
+        </div>
     `).join('');
-}
-
-function updateStatsDisplay() {
-    const stats = {
-        totalPosts: userPostHistory.length,
-        creditsUsed: (userPlan.postsPerMonth - userCredits),
-        memberSince: new Date().getFullYear()
-    };
-    
-    const totalPostsEl = document.getElementById('totalPosts');
-    const creditsUsedEl = document.getElementById('creditsUsed');
-    const memberSinceEl = document.getElementById('memberSince');
-    const dropdownTotalPostsEl = document.getElementById('dropdownTotalPosts');
-    const dropdownCreditsUsedEl = document.getElementById('dropdownCreditsUsed');
-    const creditsProgressEl = document.getElementById('creditsProgress');
-    
-    if (totalPostsEl) totalPostsEl.textContent = stats.totalPosts;
-    if (creditsUsedEl) creditsUsedEl.textContent = stats.creditsUsed;
-    if (memberSinceEl) memberSinceEl.textContent = stats.memberSince;
-    if (dropdownTotalPostsEl) dropdownTotalPostsEl.textContent = stats.totalPosts;
-    if (dropdownCreditsUsedEl) dropdownCreditsUsedEl.textContent = `${stats.creditsUsed} / ${userPlan.postsPerMonth}`;
-    
-    const progress = (stats.creditsUsed / userPlan.postsPerMonth) * 100;
-    if (creditsProgressEl) creditsProgressEl.style.width = progress + '%';
-    
-    updateCreditsDisplay();
-}
-
-function updateCreditsDisplay() {
-    const creditsLeftEl = document.getElementById('creditsLeft');
-    const settingsCreditsDisplayEl = document.getElementById('settingsCreditsDisplay');
-    const settingsProgressDisplayEl = document.getElementById('settingsProgressDisplay');
-    
-    if (creditsLeftEl) creditsLeftEl.textContent = userCredits;
-    if (settingsCreditsDisplayEl) settingsCreditsDisplayEl.textContent = userCredits;
-    
-    const progress = ((userPlan.postsPerMonth - userCredits) / userPlan.postsPerMonth) * 100;
-    if (settingsProgressDisplayEl) settingsProgressDisplayEl.style.width = progress + '%';
 }
 
 function copyToClipboard(elementId) {
@@ -883,228 +874,39 @@ function copyToClipboard(elementId) {
     const text = element.innerText;
     navigator.clipboard.writeText(text).then(() => {
         showToast('Copied to clipboard!', 'success');
-    }).catch(() => {
+    }).catch(err => {
         showToast('Failed to copy', 'error');
+        console.error('Copy error:', err);
     });
 }
 
 function showToast(message, type = 'info') {
-    const toastElement = document.getElementById('notificationToast');
-    const toastBody = document.getElementById('toastMessage');
+    const toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) return;
     
-    if (!toastElement || !toastBody) {
-        console.log('Toast:', message);
-        return;
-    }
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'primary'} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
     
-    toastBody.textContent = message;
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
     
-    const iconMap = {
-        success: 'fa-check-circle text-success',
-        error: 'fa-exclamation-circle text-danger',
-        warning: 'fa-exclamation-triangle text-warning',
-        info: 'fa-info-circle text-info'
-    };
-    
-    const icon = toastElement.querySelector('.toast-header i');
-    if (icon) {
-        icon.className = `fas ${iconMap[type] || iconMap.info} me-2`;
-    }
-    
-    const toast = new bootstrap.Toast(toastElement);
-    toast.show();
+    setTimeout(() => toast.remove(), 5000);
 }
 
 function createConfetti() {
-    if (typeof confetti === 'undefined') return;
-    
-    const duration = 3 * 1000;
-    const end = Date.now() + duration;
-
-    (function frame() {
+    if (typeof confetti !== 'undefined') {
         confetti({
-            particleCount: 3,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-            colors: ['#FF4500', '#FF8C00', '#FFA500']
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 }
         });
-        
-        confetti({
-            particleCount: 3,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-            colors: ['#FF4500', '#FF8C00', '#FFA500']
-        });
-
-        if (Date.now() < end) {
-            requestAnimationFrame(frame);
-        }
-    }());
-}
-
-function viewHistoryEntry(id) {
-    const entry = userPostHistory.find(e => e.id === id);
-    if (!entry) return;
-    
-    alert(`Subreddit: r/${entry.subreddit}\n\nType: ${entry.type}\n\nContent:\n${entry.output}`);
-}
-
-// ============================================
-// SETTINGS FUNCTIONS
-// ============================================
-function saveProfileChanges() {
-    const displayName = document.getElementById('settingsDisplayName')?.value;
-    const bio = document.getElementById('settingsBio')?.value;
-    
-    if (displayName) localStorage.setItem('userDisplayName', displayName);
-    if (bio) localStorage.setItem('userBio', bio);
-    
-    showToast('Profile updated successfully!', 'success');
-}
-
-function savePreferences() {
-    const emailNotif = document.getElementById('emailNotifications')?.checked;
-    const saveHistory = document.getElementById('saveHistory')?.checked;
-    
-    localStorage.setItem('emailNotifications', emailNotif);
-    localStorage.setItem('saveHistory', saveHistory);
-    
-    showToast('Preferences saved!', 'success');
-}
-
-function showChangePasswordModal() {
-    const modal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
-    modal.show();
-}
-
-async function handleChangePassword() {
-    const currentPassword = document.getElementById('currentPassword')?.value;
-    const newPassword = document.getElementById('newPassword')?.value;
-    const confirmPassword = document.getElementById('confirmPassword')?.value;
-    
-    if (!newPassword || !confirmPassword) {
-        showToast('Please fill in all fields', 'error');
-        return;
-    }
-    
-    if (newPassword !== confirmPassword) {
-        showToast('Passwords do not match!', 'error');
-        return;
-    }
-    
-    if (newPassword.length < 8) {
-        showToast('Password must be at least 8 characters', 'error');
-        return;
-    }
-    
-    try {
-        const { error } = await supabaseClient.auth.updateUser({
-            password: newPassword
-        });
-        
-        if (error) throw error;
-        
-        showToast('Password updated successfully!', 'success');
-        const modal = bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'));
-        if (modal) modal.hide();
-        
-        const currentPasswordEl = document.getElementById('currentPassword');
-        const newPasswordEl = document.getElementById('newPassword');
-        const confirmPasswordEl = document.getElementById('confirmPassword');
-        
-        if (currentPasswordEl) currentPasswordEl.value = '';
-        if (newPasswordEl) newPasswordEl.value = '';
-        if (confirmPasswordEl) confirmPasswordEl.value = '';
-        
-    } catch (error) {
-        showToast('Failed to update password: ' + error.message, 'error');
     }
 }
-
-function handleLogoutAllDevices() {
-    if (confirm('This will log you out of all devices. Continue?')) {
-        handleSignOut();
-        showToast('Logged out from all devices', 'success');
-    }
-}
-
-function showDeleteAccountModal() {
-    const modal = new bootstrap.Modal(document.getElementById('deleteAccountModal'));
-    modal.show();
-}
-
-async function handleDeleteAccount() {
-    const confirmEmail = document.getElementById('deleteConfirmEmail')?.value;
-    const confirmPassword = document.getElementById('deleteConfirmPassword')?.value;
-    const confirmCheck = document.getElementById('deleteConfirmCheck')?.checked;
-    
-    if (!confirmEmail || !confirmPassword || !confirmCheck) {
-        showToast('Please complete all fields and confirm deletion', 'error');
-        return;
-    }
-    
-    if (confirmEmail !== currentUser?.email) {
-        showToast('Email does not match your account', 'error');
-        return;
-    }
-    
-    if (!confirm('⚠️ FINAL WARNING: This will permanently delete your account and all data. This cannot be undone!')) {
-        return;
-    }
-    
-    try {
-        // First verify password by attempting to sign in
-        const { error: signInError } = await supabaseClient.auth.signInWithPassword({
-            email: confirmEmail,
-            password: confirmPassword
-        });
-        
-        if (signInError) {
-            showToast('Incorrect password', 'error');
-            return;
-        }
-        
-        // Clear all local data
-        localStorage.clear();
-        
-        // Sign out
-        await supabaseClient.auth.signOut();
-        
-        showToast('Account deletion initiated. You have been logged out.', 'success');
-        
-        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteAccountModal'));
-        if (modal) modal.hide();
-        
-        setTimeout(() => {
-            window.location.reload();
-        }, 2000);
-        
-    } catch (error) {
-        showToast('Error deleting account: ' + error.message, 'error');
-    }
-}
-
-function showUpgradeModal() {
-    navigateToPage('pricing');
-}
-
-// ============================================
-// MAKE FUNCTIONS GLOBAL FOR HTML ONCLICK
-// ============================================
-window.initiateDodoPayment = initiateDodoPayment;
-window.navigateToPage = navigateToPage;
-window.saveProfileChanges = saveProfileChanges;
-window.savePreferences = savePreferences;
-window.showChangePasswordModal = showChangePasswordModal;
-window.handleChangePassword = handleChangePassword;
-window.handleLogoutAllDevices = handleLogoutAllDevices;
-window.showDeleteAccountModal = showDeleteAccountModal;
-window.handleDeleteAccount = handleDeleteAccount;
-window.showUpgradeModal = showUpgradeModal;
-window.viewHistoryEntry = viewHistoryEntry;
-
-console.log('✅ Dashboard loaded successfully!');
-console.log('💳 Payment system active');
-console.log('🎯 All features initialized');
