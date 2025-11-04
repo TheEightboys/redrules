@@ -1,227 +1,301 @@
 // ============================================
-// SUPABASE CONFIGURATION
+// PRODUCTION-READY DASHBOARD.JS
 // ============================================
-const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MTg5MTYxMiwiZXhwIjoyMDc3NDY3NjEyfQ.A9yEUnLSslhtMIcgI-CG7siK1ic5tUEAktYuqGOmuzg';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ============================================
-// GLOBAL VARIABLES
-// ============================================
-const API_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:3000'
-    : 'https://redrules.onrender.com';
+// --- SUPABASE & API CONFIG ---
+// !! IMPORTANT: Replace with your actual Supabase URL and Anon Key !!
+const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co'; // e.g., 'https://duzaoqvdukdnbjzccwbp.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8 '; // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ikp...ZDyFK6UP8'
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// !! IMPORTANT: Replace with your deployed backend URL !!
+const API_URL = 'https://redditfix-backend.onrender.com'; // e.g., 'https://reddi-gen-api.onrender.com'
+
+// --- GLOBAL STATE ---
 let currentUser = null;
-let userCredits = 10;
-let userPostHistory = [];
-let userPlan = {
-    name: 'Free',
-    tier: 'free',
-    credits: 10,
-    postsPerMonth: 10,
-    monthlyLimit: 10,
-    features: [],
-    activated: false
-};
+let userProfile = null;
+let userPlan = null;
+let userHistory = [];
+let bootstrapModals = {}; // To store modal instances
+let bootstrapToast = null;
 
-// ============================================
-// PRICING DATA
-// ============================================
+// --- PRICING DATA (Source of Truth) ---
 const PRICING_DATA = {
     starter: {
-        monthly: { price: 1.99, posts: 150, name: 'Starter' },
-        yearly: { price: 21.49, posts: 1800, name: 'Starter' }
+        monthly: { price: 1.99, posts: 150 },
+        yearly: { price: 21.49, posts: 1800 } // Assuming 1.99*12 * 0.9
     },
     professional: {
-        monthly: { price: 2.99, posts: 250, name: 'Professional' },
-        yearly: { price: 32.49, posts: 3000, name: 'Professional' }
+        monthly: { price: 2.99, posts: 250 },
+        yearly: { price: 32.49, posts: 3000 } // Assuming 2.99*12 * 0.9
     },
     enterprise: {
-        monthly: { price: 3.99, posts: 500, name: 'Enterprise' },
-        yearly: { price: 43.49, posts: 6000, name: 'Enterprise' }
+        monthly: { price: 3.99, posts: 500 },
+        yearly: { price: 43.49, posts: 6000 } // Assuming 3.99*12 * 0.9
     }
 };
 
 // ============================================
-// INITIALIZE ON PAGE LOAD
+// INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
-    console.log('✅ Dashboard loading...');
-    
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        
-        if (session) {
-            currentUser = session.user;
-            await handlePaymentSuccess();
-            await loadUserPlanFromDatabase();
-            loadUserData();
-            hideAuthModal();
-            updateUIAfterAuth();
-            updateStatsDisplay();
-            updateCreditsDisplay();
-            updatePlanUI();
-            displayHistory();
-        } else {
-            showAuthModal();
-        }
-        
-        initializeEventListeners();
-        setupPricingToggle();
-        
-        setTimeout(() => {
-            const loadingScreen = document.getElementById('loadingScreen');
-            if (loadingScreen) loadingScreen.classList.add('hidden');
-        }, 500);
-        
-    } catch (error) {
-        console.error('❌ Initialization error:', error);
-        showToast('Error loading dashboard: ' + error.message, 'error');
-        
-        const loadingScreen = document.getElementById('loadingScreen');
-        if (loadingScreen) loadingScreen.classList.add('hidden');
-    }
+    console.log('✅ Dashboard initializing...');
+
+    // Initialize Bootstrap components
+    initBootstrapComponents();
+
+    // Check for payment callback
+    await handlePaymentCallback();
+
+    // Check auth state
+    await checkAuthState();
+
+    // Initialize event listeners
+    initializeEventListeners();
+
+    // Set initial pricing display
+    updatePricingDisplay();
 });
 
-// ============================================
-// LOAD USER PLAN FROM DATABASE
-// ============================================
-async function loadUserPlanFromDatabase() {
-    if (!currentUser) {
-        console.log('⚠️ No current user');
-        return;
-    }
-    
+function initBootstrapComponents() {
+    // Modals
+    const modalIds = ['authModal', 'viewPostModal', 'changePasswordModal', 'deleteAccountModal'];
+    modalIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) bootstrapModals[id] = new bootstrap.Modal(el);
+    });
+
+    // Toast
+    const toastEl = document.getElementById('notificationToast');
+    if (toastEl) bootstrapToast = new bootstrap.Toast(toastEl, { delay: 4000 });
+}
+
+async function checkAuthState() {
     try {
-        console.log('📊 Loading plan from database for:', currentUser.id);
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
         
-        const response = await fetch(`${API_URL}/api/user/plan/${currentUser.id}`);
-        
-        if (!response.ok) {
-            console.error('❌ API returned error:', response.status);
-            resetPlanToFree();
-            return;
-        }
-        
-        const data = await response.json();
-        console.log('📦 Received data:', data);
-        
-        if (data.success && data.hasPlan) {
-            userPlan = data.plan;
-            userCredits = data.plan.credits;
-            console.log('✅ Plan loaded from database:', userPlan);
+        if (error) throw error;
+
+        if (session) {
+            console.log('✅ User authenticated:', session.user.email);
+            currentUser = session.user;
+            await loadUserData(); // Load user data
+            hideAuthModal();
+            hideLoadingScreen();
         } else {
-            resetPlanToFree();
-            console.log('ℹ️ No plan found, using free tier');
+            console.log('⚠️ No active session');
+            showAuthModal();
+            hideLoadingScreen();
         }
-        
     } catch (error) {
-        console.error('❌ Error loading plan from database:', error);
-        resetPlanToFree();
+        console.error('❌ Auth state check error:', error);
+        showToast('Error checking authentication', 'error');
+        hideLoadingScreen();
     }
 }
 
 // ============================================
-// DEDUCT CREDIT
+// DATA FETCHING & UI UPDATES
 // ============================================
-async function deductCreditFromDatabase() {
-    if (!currentUser) return false;
-    
+
+/**
+ * Fetches all user data (profile, plan, history) from the backend
+ */
+async function loadUserData() {
+    if (!currentUser) return;
+
     try {
-        const response = await fetch(`${API_URL}/api/user/plan/deduct-credit`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: currentUser.id })
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/user/data`, {
+            headers: { 'Authorization': `Bearer ${token}` }
         });
-        
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch user data');
+        }
+
         const data = await response.json();
         
         if (data.success) {
-            userCredits = data.creditsRemaining;
-            userPlan.credits = userCredits;
-            updateCreditsDisplay();
-            updateStatsDisplay();
-            return true;
+            userProfile = data.profile;
+            userPlan = data.plan;
+            userHistory = data.history;
+            
+            // Update all parts of the UI
+            updateUI();
         } else {
-            showToast(data.error || 'Failed to deduct credit', 'error');
-            return false;
+            throw new Error(data.error || 'Could not load data');
         }
-        
+
     } catch (error) {
-        console.error('❌ Error deducting credit:', error);
-        return false;
+        console.error('❌ Error loading user data:', error);
+        showToast(error.message, 'error');
+        if (error.message.includes('Authentication')) await handleSignOut(); // Force sign out
     }
 }
 
-// ============================================
-// AUTHENTICATION FUNCTIONS
-// ============================================
-function showAuthModal() {
-    const authModalEl = document.getElementById('authModal');
-    if (authModalEl) {
-        const authModal = new bootstrap.Modal(authModalEl);
-        authModal.show();
-    }
+/**
+ * Main function to update all dynamic UI elements
+ */
+function updateUI() {
+    if (!userProfile || !userPlan) return;
+
+    const credits = userPlan.credits_remaining;
+    const maxCredits = userPlan.posts_per_month;
+    const creditsUsed = maxCredits - credits;
+    const progressPercent = maxCredits > 0 ? (creditsUsed / maxCredits) * 100 : 0;
+    const joinDate = new Date(userProfile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+    // Sidebar
+    setText('creditsLeft', credits);
+
+    // User Dropdown
+    setText('dropdownUserName', userProfile.display_name || userProfile.email);
+    setText('dropdownUserEmail', userProfile.email);
+    setText('dropdownCreditsUsed', `${creditsUsed} / ${maxCredits}`);
+    setStyle('creditsProgress', 'width', `${progressPercent}%`);
+    setText('dropdownTotalPosts', userHistory.length);
+    setText('dropdownJoinDate', joinDate);
+
+    // Profile Page
+    setText('profileName', userProfile.display_name || userProfile.email);
+    setText('profileEmail', userProfile.email);
+    setText('totalPosts', userHistory.length);
+    setText('creditsUsed', creditsUsed);
+    setText('memberSince', joinDate.split(' ')[1]); // Just the year
+
+    // Settings Page
+    setValue('settingsEmail', userProfile.email);
+    setValue('settingsDisplayName', userProfile.display_name);
+    setValue('settingsBio', userProfile.bio);
+    setText('settingsCreditsDisplay', credits);
+    setText('settingsCreditsSubtext', `${credits} / ${maxCredits} credits remaining`);
+    setStyle('settingsProgressDisplay', 'width', `${progressPercent}%`);
+
+    // History Page
+    displayHistory();
 }
 
-function hideAuthModal() {
-    const authModalEl = document.getElementById('authModal');
-    if (authModalEl) {
-        const authModal = bootstrap.Modal.getInstance(authModalEl);
-        if (authModal) authModal.hide();
+/**
+ * Renders the post history table
+ */
+function displayHistory() {
+    const tableBody = document.getElementById('historyTableBody');
+    if (!tableBody) return;
+
+    if (userHistory.length === 0) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted py-5">
+                    <i class="fas fa-inbox fa-3x mb-3 d-block"></i>
+                    No posts yet. Start generating!
+                </td>
+            </tr>
+        `;
+        return;
     }
+
+    tableBody.innerHTML = userHistory.map(post => {
+        const date = new Date(post.created_at).toLocaleDateString();
+        const type = post.post_type === 'generated' 
+            ? '<span class="badge bg-primary">Generated</span>'
+            : '<span class="badge bg-success">Optimized</span>';
+        const preview = (post.title || post.content).substring(0, 50) + '...';
+
+        return `
+            <tr>
+                <td>${date}</td>
+                <td>r/${post.subreddit}</td>
+                <td>${type}</td>
+                <td>${preview}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info" 
+                            data-post-id="${post.id}">
+                        <i class="fas fa-eye me-1"></i>View
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    // Add event listeners to new "View" buttons
+    tableBody.querySelectorAll('[data-post-id]').forEach(button => {
+        button.addEventListener('click', () => {
+            const postId = button.dataset.postId;
+            const post = userHistory.find(p => p.id == postId);
+            if (post) showViewPostModal(post);
+        });
+    });
 }
+
+// ============================================
+// AUTHENTICATION
+// ============================================
 
 async function handleLogin(e) {
     e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
+    const email = getValue('loginEmail');
+    const password = getValue('loginPassword');
+    if (!email || !password) return showToast('Please enter email and password', 'warning');
+    
+    setButtonLoading('loginButton', true, 'Signing In...');
 
     try {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        const { data: { session }, error } = await supabaseClient.auth.signInWithPassword({ email, password });
         if (error) throw error;
         
-        currentUser = data.user;
+        currentUser = session.user;
+        await loadUserData();
         hideAuthModal();
-        
-        await loadUserPlanFromDatabase();
-        loadUserData();
-        
-        updateUIAfterAuth();
-        updateStatsDisplay();
-        updateCreditsDisplay();
-        updatePlanUI();
-        displayHistory();
-        
         showToast('Welcome back!', 'success');
     } catch (error) {
-        showToast('Login failed: ' + error.message, 'error');
+        console.error('❌ Login error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('loginButton', false, '<i class="fas fa-sign-in-alt me-2"></i>Sign In');
     }
 }
 
 async function handleSignup(e) {
     e.preventDefault();
-    const email = document.getElementById('signupEmail').value;
-    const password = document.getElementById('signupPassword').value;
-    const confirmPassword = document.getElementById('signupPasswordConfirm').value;
+    const email = getValue('signupEmail');
+    const password = getValue('signupPassword');
+    const confirm = getValue('signupPasswordConfirm');
 
-    if (password !== confirmPassword) {
-        showToast('Passwords do not match!', 'error');
-        return;
-    }
+    if (!email || !password || !confirm) return showToast('Please fill all fields', 'warning');
+    if (password.length < 8) return showToast('Password must be at least 8 characters', 'warning');
+    if (password !== confirm) return showToast('Passwords do not match!', 'error');
+
+    setButtonLoading('signupButton', true, 'Creating Account...');
 
     try {
-        const { data, error } = await supabaseClient.auth.signUp({ email, password });
+        const { error } = await supabaseClient.auth.signUp({ 
+            email, 
+            password,
+            options: { emailRedirectTo: window.location.origin }
+        });
         if (error) throw error;
-        
-        showToast('Account created! Check your email to verify.', 'success');
-        const signupSection = document.getElementById('signupSection');
-        const emailAuthSection = document.getElementById('emailAuthSection');
-        if (signupSection) signupSection.style.display = 'none';
-        if (emailAuthSection) emailAuthSection.style.display = 'block';
+
+        showToast('Account created! Please check your email to verify.', 'success');
+        showLoginSection(); // Switch to login view
     } catch (error) {
-        showToast('Signup failed: ' + error.message, 'error');
+        console.error('❌ Signup error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('signupButton', false, '<i class="fas fa-user-plus me-2"></i>Create Account');
+    }
+}
+
+async function handleGoogleSignIn() {
+    try {
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+            provider: 'google',
+            options: { redirectTo: window.location.origin }
+        });
+        if (error) throw error;
+    } catch (error) {
+        console.error('❌ Google sign-in error:', error);
+        showToast(error.message, 'error');
     }
 }
 
@@ -229,253 +303,460 @@ async function handleSignOut() {
     try {
         await supabaseClient.auth.signOut();
         currentUser = null;
-        userCredits = 10;
-        userPostHistory = [];
-        resetPlanToFree();
-        localStorage.clear();
+        userProfile = null;
+        userPlan = null;
+        userHistory = [];
+        updateUI(); // Clear UI
         showAuthModal();
         showToast('Signed out successfully', 'success');
-        
-        // Reset UI
-        navigateToPage('aiGenerator');
     } catch (error) {
-        showToast('Sign out failed: ' + error.message, 'error');
+        console.error('❌ Sign out error:', error);
+        showToast(error.message, 'error');
+    }
+}
+
+// ============================================
+// AI & OPTIMIZER FUNCTIONS
+// ============================================
+
+async function handleFetchRules(type) {
+    const isAI = type === 'ai';
+    const inputId = isAI ? 'aiSubredditInput' : 'optimizerSubredditInput';
+    const buttonId = isAI ? 'aiFetchGuidelinesBtn' : 'optimizerFetchGuidelinesBtn';
+    const containerId = isAI ? 'aiGuidelinesContainer' : 'optimizerGuidelinesContainer';
+    const contentId = isAI ? 'aiGuidelinesContent' : 'aiGuidelineSubreddit';
+    const subredditId = isAI ? 'aiGuidelineSubreddit' : 'optimizerGuidelineSubreddit';
+    
+    const subreddit = getValue(inputId);
+    if (!subreddit) return showToast('Please enter a subreddit name', 'warning');
+
+    setButtonLoading(buttonId, true, ''); // Spinner only
+    
+    try {
+        const response = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Could not fetch rules');
+        }
+
+        setText(subredditId, data.subreddit);
+        // Use innerHTML to render bold tags from the server's rulesText
+        document.getElementById(isAI ? 'aiGuidelinesContent' : 'optimizerGuidelinesContent').innerHTML = data.rules.replace(/\n/g, '<br>');
+        show(containerId);
+        
+        if (!isAI) {
+            // Enable optimizer button
+            document.getElementById('optimizerOptimizeBtn').disabled = false;
+            setText('optimizerButtonHelp', 'Ready to optimize!');
+        }
+
+    } catch (error) {
+        console.error('❌ Rules fetch error:', error);
+        showToast(error.message, 'error');
+        hide(containerId);
+    } finally {
+        const icon = '<i class="fas fa-search me-1"></i>Fetch Rules';
+        setButtonLoading(buttonId, false, icon);
+    }
+}
+
+async function handleAIGenerate(isRegen = false) {
+    if (userPlan.credits_remaining <= 0) {
+        showToast('No credits remaining. Please upgrade.', 'error');
+        return navigateToPage('pricing');
+    }
+    
+    const subreddit = getValue('aiSubredditInput');
+    const topic = getValue('aiTopicInput');
+    const style = getValue('aiStyleSelect');
+    const rules = getText('aiGuidelinesContent');
+
+    if (!subreddit || !topic) return showToast('Please enter a subreddit and topic', 'warning');
+
+    setButtonLoading('aiGenerateBtn', true, 'Generating...');
+    if (isRegen) setButtonLoading('aiRegenerateBtn', true, '');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/generate-post`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ subreddit, topic, style, rules })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Generation failed');
+
+        // Display results
+        setValue('aiGeneratedTitle', data.post.title);
+        setValue('aiGeneratedContent', data.post.content);
+        setText('aiTargetSubreddit', subreddit);
+        show('aiOutputCard');
+        
+        // Update state
+        userPlan.credits_remaining = data.creditsRemaining;
+        userHistory.unshift(data.historyItem);
+        updateUI(); // Refresh credits and history count
+        
+        showToast('Content generated successfully!', 'success');
+
+    } catch (error) {
+        console.error('❌ AI generate error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('aiGenerateBtn', false, '<i class="fas fa-wand-magic-sparkles me-2"></i>Generate Content');
+        if (isRegen) setButtonLoading('aiRegenerateBtn', false, '<i class="fas fa-sync me-1"></i>Try Again');
+    }
+}
+
+async function handleOptimize(isRegen = false) {
+    if (userPlan.credits_remaining <= 0) {
+        showToast('No credits remaining. Please upgrade.', 'error');
+        return navigateToPage('pricing');
+    }
+
+    const subreddit = getValue('optimizerSubredditInput');
+    const content = getValue('optimizerContentInput');
+    const style = getValue('optimizationStyleSelect');
+    const rules = getText('optimizerGuidelinesContent');
+
+    if (!subreddit || !content) return showToast('Please enter a subreddit and content', 'warning');
+
+    setButtonLoading('optimizerOptimizeBtn', true, 'Optimizing...');
+    if (isRegen) setButtonLoading('optimizerRegenerateBtn', true, '');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/optimize-post`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ subreddit, content, style, rules })
+        });
+        
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Optimization failed');
+
+        // Display results
+        setValue('optimizerOptimizedText', data.optimizedPost);
+        setText('optimizerTargetSubreddit', subreddit);
+        show('optimizerOutputCard');
+        
+        // Update state
+        userPlan.credits_remaining = data.creditsRemaining;
+        userHistory.unshift(data.historyItem);
+        updateUI(); // Refresh credits and history count
+        
+        showToast('Content optimized successfully!', 'success');
+
+    } catch (error) {
+        console.error('❌ Optimize error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('optimizerOptimizeBtn', false, '<i class="fas fa-magic me-2"></i>Optimize Content');
+        if (isRegen) setButtonLoading('optimizerRegenerateBtn', false, '<i class="fas fa-sync me-1"></i>Optimize Again');
     }
 }
 
 // ============================================
 // PAYMENT FUNCTIONS
 // ============================================
+
 async function initiateDodoPayment(planType) {
-    if (!currentUser) {
-        showToast('⚠️ Please sign in to purchase a plan', 'warning');
-        showAuthModal();
-        return;
-    }
+    if (!currentUser) return showAuthModal();
+    
+    const billingCycle = document.querySelector('input[name="billingCycle"]:checked').value;
+    const planData = PRICING_DATA[planType][billingCycle];
+    
+    const paymentData = {
+        plan: planType,
+        postsPerMonth: planData.posts,
+        billingCycle: billingCycle,
+        amount: planData.price,
+        transactionId: `TXN_${Date.now()}_${currentUser.id.substring(0, 8)}`
+    };
 
     try {
-        console.log('🚀 Initiating payment for plan:', planType);
-        
-        const billingCycle = document.querySelector('input[name="billingCycle"]:checked')?.value || 'monthly';
-        const pricingData = PRICING_DATA[planType][billingCycle];
-        
-        if (!pricingData) {
-            showToast('Invalid plan selected', 'error');
-            return;
-        }
-
-        const userId = currentUser.id;
-        const userEmail = currentUser.email;
-        const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-        
-        localStorage.setItem('pendingPayment', JSON.stringify({
-            userId: userId,
-            planType: planType,
-            posts: pricingData.posts,
-            billingCycle: billingCycle,
-            amount: pricingData.price,
-            timestamp: Date.now()
-        }));
-        
-        showToast('Creating payment session...', 'info');
-        
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
         const response = await fetch(`${API_URL}/api/dodo/create-session`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: userId,
-                plan: planType,
-                email: userEmail,
-                amount: pricingData.price,
-                postsPerMonth: pricingData.posts,
-                billingCycle: billingCycle,
-                transactionId: transactionId
-            })
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(paymentData)
         });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Failed to create payment session');
-        }
-        
+
         const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create payment session');
+
+        showToast('Redirecting to payment...', 'info');
         
-        if (!data.success || !data.paymentUrl) {
-            throw new Error('Invalid response from payment server');
-        }
-        
-        console.log('✅ Payment session created');
-        localStorage.setItem('paymentSessionId', data.sessionId);
-        
-        showToast('Redirecting to payment...', 'success');
-        
-        setTimeout(() => {
-            window.location.href = data.paymentUrl;
-        }, 500);
-        
+        // Redirect to Dodo's checkout URL
+        window.location.href = data.paymentUrl;
+
     } catch (error) {
-        console.error('❌ Payment error:', error);
-        showToast('Payment failed: ' + error.message, 'error');
-        localStorage.removeItem('pendingPayment');
+        console.error('❌ Dodo init error:', error);
+        showToast(error.message, 'error');
     }
 }
 
-// ============================================
-// PAYMENT SUCCESS HANDLER
-// ============================================
-async function handlePaymentSuccess() {
+async function handlePaymentCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentStatus = urlParams.get('payment');
-    
+
     if (paymentStatus === 'success') {
-        console.log('✅ Payment success detected!');
-        showToast('🎉 Payment successful! Activating your plan...', 'success');
+        showToast('Payment successful! 🎉 Activating your plan...', 'success');
+        // The webhook handles activation. We just need to reload data.
+        // We add a small delay to give the webhook time to process.
+        setTimeout(() => {
+            loadUserData();
+            navigateToPage('aiGenerator'); // Go to a useful page
+        }, 3000); // 3-second delay
         
-        const pendingPayment = localStorage.getItem('pendingPayment');
-        
-        if (pendingPayment) {
-            try {
-                const paymentData = JSON.parse(pendingPayment);
-                console.log('📦 Found pending payment:', paymentData);
-                
-                const response = await fetch(`${API_URL}/api/user/plan`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        userId: paymentData.userId,
-                        planType: paymentData.planType,
-                        postsPerMonth: paymentData.posts,
-                        credits: paymentData.posts,
-                        billingCycle: paymentData.billingCycle,
-                        amount: paymentData.amount
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.success) {
-                    console.log('✅ Plan activated successfully!');
-                    
-                    userPlan = {
-                        name: paymentData.planType.charAt(0).toUpperCase() + paymentData.planType.slice(1),
-                        tier: paymentData.planType,
-                        credits: paymentData.posts,
-                        postsPerMonth: paymentData.posts,
-                        billingCycle: paymentData.billingCycle,
-                        activated: true
-                    };
-                    userCredits = paymentData.posts;
-                    
-                    updatePlanUI();
-                    updateCreditsDisplay();
-                    updateStatsDisplay();
-                    
-                    localStorage.removeItem('pendingPayment');
-                    localStorage.removeItem('paymentSessionId');
-                    
-                    showToast('✅ Your plan is now active!', 'success');
-                    createConfetti();
-                    
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                    
-                    setTimeout(() => {
-                        navigateToPage('aiGenerator');
-                    }, 1500);
-                    
-                } else {
-                    throw new Error(data.error || 'Failed to activate plan');
-                }
-                
-            } catch (error) {
-                console.error('❌ Error activating plan:', error);
-                showToast('Error activating plan. Please contact support.', 'error');
-                
-                setTimeout(async () => {
-                    await loadUserPlanFromDatabase();
-                    updatePlanUI();
-                    updateCreditsDisplay();
-                    window.history.replaceState({}, document.title, window.location.pathname);
-                }, 2000);
-            }
-        }
+        // Clean the URL
+        window.history.replaceState({}, document.title, window.location.pathname);
         
     } else if (paymentStatus === 'cancelled') {
-        console.log('❌ Payment cancelled');
-        showToast('Payment was cancelled', 'warning');
-        localStorage.removeItem('pendingPayment');
-        localStorage.removeItem('paymentSessionId');
+        showToast('Payment was cancelled.', 'warning');
+        navigateToPage('pricing'); // Go back to pricing
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
 
-// ============================================
-// PRICING FUNCTIONS
-// ============================================
-function setupPricingToggle() {
-    const monthlyRadio = document.getElementById('monthlyBilling');
-    const yearlyRadio = document.getElementById('yearlyBilling');
+function updatePricingDisplay() {
+    const cycle = document.querySelector('input[name="billingCycle"]:checked').value;
     
-    if (monthlyRadio && yearlyRadio) {
-        monthlyRadio.addEventListener('change', () => updatePricingDisplay('monthly'));
-        yearlyRadio.addEventListener('change', () => updatePricingDisplay('yearly'));
-    }
-    
-    // Initialize with monthly pricing
-    updatePricingDisplay('monthly');
+    Object.keys(PRICING_DATA).forEach(plan => {
+        const data = PRICING_DATA[plan][cycle];
+        setText(`${plan}Price`, `$${data.price}`);
+        setText(`${plan}Posts`, `${data.posts} Posts Per ${cycle === 'yearly' ? 'Year' : 'Month'}`);
+        setText(`${plan}Billing`, cycle === 'yearly' ? '/year' : '/month');
+    });
 }
 
-function updatePricingDisplay(billingCycle) {
-    Object.keys(PRICING_DATA).forEach(planKey => {
-        const planData = PRICING_DATA[planKey][billingCycle];
-        const priceElement = document.getElementById(`${planKey}Price`);
-        const postsElement = document.getElementById(`${planKey}Posts`);
-        const billingElement = document.getElementById(`${planKey}Billing`);
+// ============================================
+// SETTINGS PAGE FUNCTIONS
+// ============================================
+
+async function handleSaveProfile() {
+    const displayName = getValue('settingsDisplayName');
+    const bio = getValue('settingsBio');
+
+    setButtonLoading('saveProfileBtn', true, 'Saving...');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/user/profile`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ displayName, bio })
+        });
         
-        if (priceElement) {
-            priceElement.textContent = `$${planData.price}`;
-        }
-        if (postsElement) {
-            postsElement.textContent = `${planData.posts} Posts`;
-        }
-        if (billingElement) {
-            billingElement.textContent = billingCycle === 'yearly' ? '/year' : '/month';
-        }
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        userProfile = data.profile; // Update local state
+        updateUI(); // Refresh UI
+        showToast('Profile saved successfully!', 'success');
+
+    } catch (error) {
+        console.error('❌ Save profile error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('saveProfileBtn', false, '<i class="fas fa-save me-2"></i>Save Profile Changes');
+    }
+}
+
+async function handleChangePassword() {
+    const newPassword = getValue('newPassword');
+    const confirm = getValue('confirmPassword');
+
+    if (!newPassword || !confirm) return showToast('Please fill all fields', 'warning');
+    if (newPassword.length < 8) return showToast('Password must be at least 8 characters', 'warning');
+    if (newPassword !== confirm) return showToast('Passwords do not match!', 'error');
+
+    setButtonLoading('changePasswordBtn', true, 'Updating...');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/auth/change-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ newPassword })
+        });
+        
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        showToast('Password updated successfully!', 'success');
+        bootstrapModals.changePasswordModal.hide();
+        setValue('newPassword', '');
+        setValue('confirmPassword', '');
+
+    } catch (error) {
+        console.error('❌ Change password error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('changePasswordBtn', false, '<i class="fas fa-save me-2"></i>Update Password');
+    }
+}
+
+async function handleLogoutAll() {
+    if (!confirm('Are you sure you want to sign out from all devices?')) return;
+
+    setButtonLoading('logoutAllBtn', true, 'Logging out...');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/auth/logout-all`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        // This action logs out the current session too
+        await handleSignOut();
+        showToast('Signed out from all devices.', 'success');
+
+    } catch (error) {
+        console.error('❌ Logout all error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('logoutAllBtn', false, '<i class="fas fa-sign-out-alt me-2"></i>Logout All Devices');
+    }
+}
+
+async function handleDeleteAccount() {
+    const password = getValue('deleteConfirmPassword');
+    if (!password) return showToast('Please enter your password to confirm', 'warning');
+
+    setButtonLoading('deleteAccountBtn', true, 'Deleting...');
+
+    try {
+        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const response = await fetch(`${API_URL}/api/auth/delete-account`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ password })
+        });
+        
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+
+        bootstrapModals.deleteAccountModal.hide();
+        await handleSignOut(); // Sign out locally
+        showToast('Account deleted successfully.', 'success');
+
+    } catch (error) {
+        console.error('❌ Delete account error:', error);
+        showToast(error.message, 'error');
+    } finally {
+        setButtonLoading('deleteAccountBtn', false, '<i class="fas fa-trash me-2"></i>Delete My Account');
+    }
+}
+
+
+// ============================================
+// EVENT LISTENERS
+// ============================================
+function initializeEventListeners() {
+    // Auth
+    document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
+    document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
+    document.getElementById('googleSignInBtn')?.addEventListener('click', handleGoogleSignIn);
+    document.getElementById('signOutBtn')?.addEventListener('click', handleSignOut);
+    document.getElementById('dropdownSignOutBtn')?.addEventListener('click', handleSignOut);
+    
+    // Auth UI switching
+    document.getElementById('showSignupLink')?.addEventListener('click', (e) => { e.preventDefault(); showSignupSection(); });
+    document.getElementById('showLoginLink')?.addEventListener('click', (e) => { e.preventDefault(); showLoginSection(); });
+
+    // Navigation
+    document.querySelectorAll('.sidebar-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToPage(item.dataset.page);
+        });
+    });
+    document.querySelectorAll('[data-page-link]').forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            navigateToPage(item.dataset.pageLink);
+        });
+    });
+    document.getElementById('sidebarToggle')?.addEventListener('click', () => {
+        document.getElementById('sidebar').classList.toggle('active');
+    });
+
+    // AI Generator
+    document.getElementById('aiFetchGuidelinesBtn')?.addEventListener('click', () => handleFetchRules('ai'));
+    document.getElementById('aiGenerateBtn')?.addEventListener('click', () => handleAIGenerate(false));
+    document.getElementById('aiRegenerateBtn')?.addEventListener('click', () => handleAIGenerate(true));
+    document.getElementById('aiCopyBtn')?.addEventListener('click', () => {
+        const text = `Title: ${getValue('aiGeneratedTitle')}\n\nContent:\n${getValue('aiGeneratedContent')}`;
+        copyToClipboard(text, 'Full post copied to clipboard!');
+    });
+
+    // Content Optimizer
+    document.getElementById('optimizerFetchGuidelinesBtn')?.addEventListener('click', () => handleFetchRules('optimizer'));
+    document.getElementById('optimizerOptimizeBtn')?.addEventListener('click', () => handleOptimize(false));
+    document.getElementById('optimizerRegenerateBtn')?.addEventListener('click', () => handleOptimize(true));
+    document.getElementById('optimizerCopyBtn')?.addEventListener('click', () => {
+        copyToClipboard(getValue('optimizerOptimizedText'), 'Optimized content copied!');
+    });
+
+    // Pricing
+    document.getElementById('monthlyBilling')?.addEventListener('change', updatePricingDisplay);
+    document.getElementById('yearlyBilling')?.addEventListener('change', updatePricingDisplay);
+
+    // Settings
+    document.getElementById('saveProfileBtn')?.addEventListener('click', handleSaveProfile);
+    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword);
+    document.getElementById('logoutAllBtn')?.addEventListener('click', handleLogoutAll);
+    document.getElementById('deleteAccountBtn')?.addEventListener('click', handleDeleteAccount);
+    
+    // History Modal
+    document.getElementById('viewPostCopyBtn')?.addEventListener('click', () => {
+        copyToClipboard(getValue('viewPostContent'), 'Post content copied!');
     });
 }
 
 // ============================================
-// NAVIGATION
+// MODAL & NAVIGATION UTILITIES
 // ============================================
+
 function navigateToPage(pageName) {
-    console.log('🔄 Navigating to:', pageName);
+    if (!pageName) return;
     
-    // Hide all sections
-    document.querySelectorAll('.content-section').forEach(section => {
-        section.classList.remove('active');
-    });
+    document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+    document.getElementById(`${pageName}Section`)?.classList.add('active');
     
-    // Remove active class from all sidebar items
     document.querySelectorAll('.sidebar-item').forEach(item => {
         item.classList.remove('active');
+        if (item.dataset.page === pageName) {
+            item.classList.add('active');
+        }
     });
-    
-    // Show target section
-    const targetSection = document.getElementById(pageName + 'Section');
-    if (targetSection) {
-        targetSection.classList.add('active');
-        console.log('✅ Section activated:', pageName);
-    } else {
-        console.error('❌ Section not found:', pageName + 'Section');
-    }
-    
-    // Activate corresponding sidebar item
-    const activeMenuItem = document.querySelector(`[data-page="${pageName}"]`);
-    if (activeMenuItem) {
-        activeMenuItem.classList.add('active');
-    }
-    
-    // Update page title
-    const pageTitles = {
+
+    const titles = {
         aiGenerator: 'AI Generator',
         contentOptimizer: 'Content Optimizer',
         history: 'Post History',
@@ -483,540 +764,128 @@ function navigateToPage(pageName) {
         settings: 'Settings',
         pricing: 'Pricing Plans'
     };
+    setText('pageTitle', titles[pageName] || 'Dashboard');
     
-    const pageTitle = document.getElementById('pageTitle');
-    if (pageTitle) {
-        pageTitle.textContent = pageTitles[pageName] || pageName;
-    }
-    
-    // Close mobile sidebar if open
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && sidebar.classList.contains('active')) {
-        sidebar.classList.remove('active');
-    }
+    // Close sidebar on mobile after navigation
+    document.getElementById('sidebar').classList.remove('active');
+}
+
+function showViewPostModal(post) {
+    setValue('viewPostSubreddit', `r/${post.subreddit}`);
+    setValue('viewPostContentTitle', post.title || '');
+    setValue('viewPostContent', post.content);
+    bootstrapModals.viewPostModal.show();
+}
+
+function showAuthModal() { show('authModal', 'modal'); }
+function hideAuthModal() { hide('authModal', 'modal'); }
+function showLoadingScreen() { show('loadingScreen', 'flex'); }
+function hideLoadingScreen() { hide('loadingScreen'); }
+
+function showLoginSection() {
+    hide('signupSection');
+    show('emailAuthSection');
+}
+function showSignupSection() {
+    hide('emailAuthSection');
+    show('signupSection');
 }
 
 // ============================================
-// EVENT LISTENERS
+// DOM & UTILITY HELPERS
 // ============================================
-function initializeEventListeners() {
-    // Auth forms
-    const loginForm = document.getElementById('loginForm');
-    const signupForm = document.getElementById('signupForm');
-    const signOutBtn = document.getElementById('signOutBtn');
-    const dropdownSignOutBtn = document.getElementById('dropdownSignOutBtn');
-    
-    if (loginForm) loginForm.addEventListener('submit', handleLogin);
-    if (signupForm) signupForm.addEventListener('submit', handleSignup);
-    if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
-    if (dropdownSignOutBtn) dropdownSignOutBtn.addEventListener('click', handleSignOut);
-    
-    // Auth section toggles
-    const showSignupLink = document.getElementById('showSignupLink');
-    const showLoginLink = document.getElementById('showLoginLink');
-    
-    if (showSignupLink) {
-        showSignupLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            const emailAuthSection = document.getElementById('emailAuthSection');
-            const signupSection = document.getElementById('signupSection');
-            if (emailAuthSection) emailAuthSection.style.display = 'none';
-            if (signupSection) signupSection.style.display = 'block';
-        });
-    }
-    
-    if (showLoginLink) {
-        showLoginLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            const signupSection = document.getElementById('signupSection');
-            const emailAuthSection = document.getElementById('emailAuthSection');
-            if (signupSection) signupSection.style.display = 'none';
-            if (emailAuthSection) emailAuthSection.style.display = 'block';
-        });
-    }
-    
-    // Sidebar navigation
-    document.querySelectorAll('.sidebar-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.getAttribute('data-page');
-            if (page) {
-                console.log('Sidebar click:', page);
-                navigateToPage(page);
-            }
-        });
-    });
-    
-    // Dropdown navigation
-    document.querySelectorAll('.dropdown-item[data-page]').forEach(item => {
-        item.addEventListener('click', (e) => {
-            e.preventDefault();
-            const page = item.getAttribute('data-page');
-            if (page) navigateToPage(page);
-        });
-    });
-    
-    // AI Generator button
-    const aiGenerateBtn = document.getElementById('aiGenerateBtn');
-    if (aiGenerateBtn) {
-        aiGenerateBtn.addEventListener('click', handleAIGenerate);
-    }
-    
-    // Optimizer button
-    const optimizerBtn = document.getElementById('optimizerOptimizeBtn');
-    if (optimizerBtn) {
-        optimizerBtn.addEventListener('click', handleOptimizePost);
-    }
-    
-    // Mobile sidebar toggle
-    const sidebarToggle = document.getElementById('sidebarToggle');
-    const sidebar = document.getElementById('sidebar');
-    if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-        });
+
+function show(id, displayType = 'block') {
+    const el = document.getElementById(id);
+    if (el) {
+        if (displayType === 'modal') bootstrapModals[id]?.show();
+        else el.style.display = displayType;
     }
 }
 
-// ============================================
-// AI GENERATION
-// ============================================
-async function handleAIGenerate() {
-    const subreddit = document.getElementById('subredditInput')?.value.trim();
-    const description = document.getElementById('descriptionInput')?.value.trim();
-    const tone = document.getElementById('toneSelect')?.value || 'casual';
-    
-    if (!subreddit || !description) {
-        showToast('Please fill in all fields', 'warning');
-        return;
-    }
-    
-    if (!currentUser) {
-        showToast('Please sign in to generate posts', 'warning');
-        showAuthModal();
-        return;
-    }
-    
-    if (!hasCreditsLeft()) {
-        showToast('No credits remaining. Please upgrade your plan.', 'error');
-        navigateToPage('pricing');
-        return;
-    }
-    
-    const generateBtn = document.getElementById('aiGenerateBtn');
-    const outputDiv = document.getElementById('generatedOutput');
-    
-    if (generateBtn) {
-        generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
-    }
-    
-    try {
-        // Fetch Reddit rules
-        showToast('Fetching subreddit rules...', 'info');
-        const rulesResponse = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
-        
-        if (!rulesResponse.ok) {
-            throw new Error('Failed to fetch subreddit rules');
-        }
-        
-        const rulesData = await rulesResponse.json();
-        
-        // Generate post
-        showToast('Generating post...', 'info');
-        const response = await fetch(`${API_URL}/api/generate-post`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                subreddit: subreddit,
-                description: description,
-                tone: tone,
-                rules: rulesData.rules
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to generate post');
-        }
-        
-        const data = await response.json();
-        
-        if (data.success && data.post) {
-            // Deduct credit
-            const creditDeducted = await deductCreditFromDatabase();
-            
-            if (creditDeducted) {
-                // Display result
-                if (outputDiv) {
-                    outputDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <h5>✅ Post Generated!</h5>
-                            <div class="mt-3">
-                                <strong>Title:</strong>
-                                <p>${data.post.title || 'No title'}</p>
-                                <strong>Content:</strong>
-                                <p style="white-space: pre-wrap;">${data.post.content || data.post}</p>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                // Save to history
-                const newPost = {
-                    id: Date.now(),
-                    type: 'generated',
-                    subreddit: subreddit,
-                    title: data.post.title || 'Untitled',
-                    content: data.post.content || data.post,
-                    timestamp: new Date().toISOString()
-                };
-                
-                userPostHistory.unshift(newPost);
-                localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
-                displayHistory();
-                
-                showToast('Post generated successfully!', 'success');
-            } else {
-                showToast('Failed to deduct credit', 'error');
-            }
-        } else {
-            throw new Error('Invalid response from server');
-        }
-        
-    } catch (error) {
-        console.error('❌ Generation error:', error);
-        showToast('Error: ' + error.message, 'error');
-        
-        if (outputDiv) {
-            outputDiv.innerHTML = `
-                <div class="alert alert-danger">
-                    <strong>Error:</strong> ${error.message}
-                </div>
-            `;
-        }
-    } finally {
-        if (generateBtn) {
-            generateBtn.disabled = false;
-            generateBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate Post';
-        }
+function hide(id, displayType = 'none') {
+    const el = document.getElementById(id);
+    if (el) {
+        if (displayType === 'modal') bootstrapModals[id]?.hide();
+        else el.style.display = 'none';
     }
 }
 
-// ============================================
-// POST OPTIMIZATION
-// ============================================
-async function handleOptimizePost() {
-    const postContent = document.getElementById('optimizerPostInput')?.value.trim();
-    const subreddit = document.getElementById('optimizerSubredditInput')?.value.trim();
-    
-    if (!postContent || !subreddit) {
-        showToast('Please fill in all fields', 'warning');
-        return;
-    }
-    
-    if (!currentUser) {
-        showToast('Please sign in to optimize posts', 'warning');
-        showAuthModal();
-        return;
-    }
-    
-    if (!hasCreditsLeft()) {
-        showToast('No credits remaining. Please upgrade your plan.', 'error');
-        navigateToPage('pricing');
-        return;
-    }
-    
-    const optimizeBtn = document.getElementById('optimizerOptimizeBtn');
-    const outputDiv = document.getElementById('optimizedOutput');
-    
-    if (optimizeBtn) {
-        optimizeBtn.disabled = true;
-        optimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Optimizing...';
-    }
-    
-    try {
-        // Fetch Reddit rules
-        showToast('Fetching subreddit rules...', 'info');
-        const rulesResponse = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
-        
-        if (!rulesResponse.ok) {
-            throw new Error('Failed to fetch subreddit rules');
-        }
-        
-        const rulesData = await rulesResponse.json();
-        
-        // Optimize post
-        showToast('Optimizing post...', 'info');
-        const response = await fetch(`${API_URL}/api/optimize-post`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                subreddit: subreddit,
-                postContent: postContent,
-                rules: rulesData.rules
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to optimize post');
-        }
-        
-        const data = await response.json();
-        
-        if (data.success && data.optimizedPost) {
-            // Deduct credit
-            const creditDeducted = await deductCreditFromDatabase();
-            
-            if (creditDeducted) {
-                // Display result
-                if (outputDiv) {
-                    outputDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <h5>✅ Post Optimized!</h5>
-                            <div class="mt-3">
-                                <strong>Optimized Content:</strong>
-                                <p style="white-space: pre-wrap;">${data.optimizedPost}</p>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                // Save to history
-                const newPost = {
-                    id: Date.now(),
-                    type: 'optimized',
-                    subreddit: subreddit,
-                    title: 'Optimized Post',
-                    content: data.optimizedPost,
-                    timestamp: new Date().toISOString()
-                };
-                
-                userPostHistory.unshift(newPost);
-                localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
-                displayHistory();
-                
-                showToast('Post optimized successfully!', 'success');
-            } else {
-                showToast('Failed to deduct credit', 'error');
-            }
-        } else {
-            throw new Error('Invalid response from server');
-        }
-        
-    } catch (error) {
-        console.error('❌ Optimization error:', error);
-        showToast('Error: ' + error.message, 'error');
-        
-        if (outputDiv) {
-            outputDiv.innerHTML = `
-                <div class="alert alert-danger">
-                    <strong>Error:</strong> ${error.message}
-                </div>
-            `;
-        }
-    } finally {
-        if (optimizeBtn) {
-            optimizeBtn.disabled = false;
-            optimizeBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Optimize';
-        }
-    }
+function setText(id, text) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
 }
 
-// ============================================
-// HISTORY DISPLAY
-// ============================================
-function displayHistory() {
-    const historyContainer = document.getElementById('historyContainer');
+function getText(id) {
+    const el = document.getElementById(id);
+    return el ? el.textContent : '';
+}
+
+function setValue(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+}
+
+function getValue(id) {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+}
+
+function setStyle(id, prop, value) {
+    const el = document.getElementById(id);
+    if (el) el.style[prop] = value;
+}
+
+function setButtonLoading(id, isLoading, loadingText = '') {
+    const btn = document.getElementById(id);
+    if (!btn) return;
     
-    if (!historyContainer) {
-        console.warn('⚠️ History container not found');
-        return;
-    }
-    
-    if (userPostHistory.length === 0) {
-        historyContainer.innerHTML = `
-            <div class="text-center text-muted py-5">
-                <i class="fas fa-inbox fa-3x mb-3"></i>
-                <p>No posts yet. Generate your first post!</p>
-            </div>
+    btn.disabled = isLoading;
+    if (isLoading) {
+        btn.innerHTML = `
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            ${loadingText}
         `;
-        return;
-    }
-    
-    historyContainer.innerHTML = userPostHistory.map(post => `
-        <div class="card mb-3">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
-                    <h5 class="card-title mb-0">${post.title}</h5>
-                    <span class="badge bg-${post.type === 'generated' ? 'primary' : 'success'}">
-                        ${post.type === 'generated' ? 'Generated' : 'Optimized'}
-                    </span>
-                </div>
-                <p class="text-muted small mb-2">
-                    <i class="fas fa-reddit me-1"></i>r/${post.subreddit} • 
-                    ${new Date(post.timestamp).toLocaleString()}
-                </p>
-                <p class="card-text" style="white-space: pre-wrap;">${post.content}</p>
-                <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard(\`${post.content.replace(/`/g, '\\`')}\`)">
-                    <i class="fas fa-copy me-1"></i>Copy
-                </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem(${post.id})">
-                    <i class="fas fa-trash me-1"></i>Delete
-                </button>
-            </div>
-        </div>
-    `).join('');
-}
-
-// ============================================
-// UTILITY FUNCTIONS
-// ============================================
-function hasCreditsLeft() {
-    return userCredits > 0;
-}
-
-function resetPlanToFree() {
-    userPlan = {
-        name: 'Free',
-        tier: 'free',
-        credits: 10,
-        postsPerMonth: 10,
-        monthlyLimit: 10,
-        features: [],
-        activated: false
-    };
-    userCredits = 10;
-}
-
-function loadUserData() {
-    const savedHistory = localStorage.getItem('userPostHistory');
-    if (savedHistory) {
-        try {
-            userPostHistory = JSON.parse(savedHistory);
-        } catch (error) {
-            console.error('Error loading history:', error);
-            userPostHistory = [];
-        }
-    }
-}
-
-function updateUIAfterAuth() {
-    const userName = currentUser?.email?.split('@')[0] || 'User';
-    document.querySelectorAll('.user-name').forEach(el => {
-        el.textContent = userName;
-    });
-    document.querySelectorAll('.user-email').forEach(el => {
-        el.textContent = currentUser?.email || '';
-    });
-}
-
-function updateStatsDisplay() {
-    const totalPostsElement = document.getElementById('totalPosts');
-    const creditsLeftElement = document.getElementById('creditsLeft');
-    const planNameElement = document.getElementById('planName');
-    
-    if (totalPostsElement) totalPostsElement.textContent = userPostHistory.length;
-    if (creditsLeftElement) creditsLeftElement.textContent = userCredits;
-    if (planNameElement) planNameElement.textContent = userPlan.name;
-}
-
-function updateCreditsDisplay() {
-    document.querySelectorAll('.credits-display, .user-credits').forEach(el => {
-        el.textContent = userCredits;
-    });
-}
-
-function updatePlanUI() {
-    const planBadge = document.getElementById('currentPlanBadge');
-    if (planBadge) {
-        planBadge.textContent = userPlan.name;
-        planBadge.className = 'badge';
-        
-        const colorMap = {
-            free: 'bg-secondary',
-            starter: 'bg-primary',
-            professional: 'bg-success',
-            enterprise: 'bg-warning'
-        };
-        
-        planBadge.classList.add(colorMap[userPlan.tier] || 'bg-secondary');
-    }
-    
-    // Update plan details in profile section
-    const profilePlanName = document.getElementById('profilePlanName');
-    const profileCredits = document.getElementById('profileCredits');
-    const profileBillingCycle = document.getElementById('profileBillingCycle');
-    
-    if (profilePlanName) profilePlanName.textContent = userPlan.name;
-    if (profileCredits) profileCredits.textContent = `${userCredits} / ${userPlan.postsPerMonth}`;
-    if (profileBillingCycle && userPlan.billingCycle) {
-        profileBillingCycle.textContent = userPlan.billingCycle.charAt(0).toUpperCase() + userPlan.billingCycle.slice(1);
-    }
-}
-
-function copyToClipboard(text) {
-    navigator.clipboard.writeText(text).then(() => {
-        showToast('Copied to clipboard!', 'success');
-    }).catch(err => {
-        console.error('Copy failed:', err);
-        showToast('Failed to copy', 'error');
-    });
-}
-
-function deleteHistoryItem(postId) {
-    if (confirm('Are you sure you want to delete this post?')) {
-        userPostHistory = userPostHistory.filter(post => post.id !== postId);
-        localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
-        displayHistory();
-        updateStatsDisplay();
-        showToast('Post deleted', 'success');
+    } else {
+        btn.innerHTML = loadingText; // loadingText is the original HTML
     }
 }
 
 function showToast(message, type = 'info') {
-    const toastContainer = document.getElementById('toastContainer');
+    const toastEl = document.getElementById('notificationToast');
+    const titleEl = document.getElementById('toastTitle');
+    const messageEl = document.getElementById('toastMessage');
+
+    // Reset classes
+    toastEl.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'bg-info', 'text-white');
     
-    if (!toastContainer) {
-        console.warn('Toast container not found');
-        return;
-    }
+    const types = {
+        success: { title: 'Success', icon: 'fa-check-circle', bg: 'bg-success' },
+        error:   { title: 'Error', icon: 'fa-exclamation-circle', bg: 'bg-danger' },
+        warning: { title: 'Warning', icon: 'fa-exclamation-triangle', bg: 'bg-warning' },
+        info:    { title: 'Info', icon: 'fa-info-circle', bg: 'bg-info' }
+    };
     
-    const toast = document.createElement('div');
-    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'primary'} border-0`;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
+    const config = types[type] || types.info;
     
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">${message}</div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    `;
-    
-    toastContainer.appendChild(toast);
-    const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
-    bsToast.show();
-    
-    setTimeout(() => toast.remove(), 6000);
+    titleEl.innerHTML = `<i class="fas ${config.icon} me-2"></i>${config.title}`;
+    messageEl.textContent = message;
+    toastEl.classList.add(config.bg, 'text-white');
+
+    bootstrapToast.show();
 }
 
-function createConfetti() {
-    if (typeof confetti !== 'undefined') {
-        confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-        });
-    }
+function copyToClipboard(text, successMessage) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast(successMessage, 'success');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        showToast('Failed to copy text', 'error');
+    });
 }
 
 // ============================================
-// EXPOSE FUNCTIONS GLOBALLY
+// GLOBAL WINDOW EXPORTS (for inline HTML onclick)
 // ============================================
 window.navigateToPage = navigateToPage;
 window.initiateDodoPayment = initiateDodoPayment;
-window.copyToClipboard = copyToClipboard;
-window.deleteHistoryItem = deleteHistoryItem;
-
-console.log('✅ Dashboard.js loaded successfully');

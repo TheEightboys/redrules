@@ -9,21 +9,15 @@ const app = express();
 // ==========================================
 // MIDDLEWARE
 // ==========================================
-// ==========================================
-// MIDDLEWARE
-// ==========================================
-
-// *** THIS IS THE FIX ***
-// More specific CORS configuration to allow preflight requests
-// and the Authorization header.
 app.use(cors({
-    origin: '*', // Allow all origins
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all standard methods + OPTIONS
-    allowedHeaders: ['Content-Type', 'Authorization'] // Explicitly allow these headers
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
+
 // ==========================================
 // CONFIGURATION
 // ==========================================
@@ -33,7 +27,7 @@ const DODO_MODE = process.env.DODO_MODE || 'test';
 const FRONTEND_URL = process.env.FRONTEND_URL;
 const BACKEND_URL = process.env.BACKEND_URL;
 
-// Supabase Admin Client (uses SERVICE KEY for admin tasks)
+// Supabase Admin Client
 const { createClient } = require('@supabase/supabase-js');
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -77,13 +71,14 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// USER PROFILE MANAGEMENT
+// USER PROFILE MANAGEMENT (FIXED)
 // ==========================================
 
-// GET user profile (profile, plan, and history)
+// GET user profile, plan, and history (SINGLE ENDPOINT)
 app.get('/api/user/data', async (req, res) => {
     try {
         const user = await getAuthUser(req);
+        console.log(`📊 Loading user data for: ${user.id}`);
         
         const { data: profile, error: profileError } = await supabase
             .from('user_profiles')
@@ -104,8 +99,14 @@ app.get('/api/user/data', async (req, res) => {
             .order('created_at', { ascending: false })
             .limit(50);
             
-        if (profileError || planError || historyError) {
-             console.error('Error fetching user data:', profileError || planError || historyError);
+        if (profileError && profileError.code !== 'PGRST116') {
+            console.error('Error fetching profile:', profileError);
+        }
+        if (planError && planError.code !== 'PGRST116') {
+            console.error('Error fetching plan:', planError);
+        }
+        if (historyError && historyError.code !== 'PGRST116') {
+            console.error('Error fetching history:', historyError);
         }
 
         res.json({
@@ -121,7 +122,39 @@ app.get('/api/user/data', async (req, res) => {
     }
 });
 
-// UPDATE user profile (Display Name, Bio)
+// ADDED: Get user plan by userId (for backwards compatibility)
+app.get('/api/user/plan/:userId', async (req, res) => {
+    try {
+        const user = await getAuthUser(req);
+        const { userId } = req.params;
+        
+        // Verify the requested userId matches the authenticated user
+        if (user.id !== userId) {
+            return res.status(403).json({ success: false, error: 'Unauthorized' });
+        }
+        
+        const { data: plan, error } = await supabase
+            .from('user_plans')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+            
+        if (error) {
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({ success: false, error: 'Plan not found' });
+            }
+            throw error;
+        }
+
+        res.json({ success: true, plan });
+
+    } catch (error) {
+        console.error('❌ Error fetching plan:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// UPDATE user profile
 app.put('/api/user/profile', async (req, res) => {
     try {
         const user = await getAuthUser(req);
@@ -149,7 +182,7 @@ app.put('/api/user/profile', async (req, res) => {
 });
 
 // ==========================================
-// REDDIT RULES ENDPOINT (FIXED)
+// REDDIT RULES ENDPOINT
 // ==========================================
 app.get('/api/reddit-rules/:subreddit', async (req, res) => {
     const subreddit = req.params.subreddit.toLowerCase();
@@ -160,7 +193,6 @@ app.get('/api/reddit-rules/:subreddit', async (req, res) => {
             `https://www.reddit.com/r/${subreddit}/about/rules.json`,
             {
                 headers: {
-                    // Using a common user-agent
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36'
                 },
                 timeout: 8000
@@ -200,7 +232,7 @@ app.get('/api/reddit-rules/:subreddit', async (req, res) => {
 });
 
 // ==========================================
-// AI GENERATION - GENERATE POST (FIXED)
+// AI GENERATION - GENERATE POST
 // ==========================================
 app.post('/api/generate-post', async (req, res) => {
     try {
@@ -236,13 +268,13 @@ ${topic}
 **Content Style:** ${style}
 
 **Instructions:**
-1.  Create a catchy, relevant title.
-2.  Write engaging content that matches the requested style.
-3.  Ensure the post follows ALL provided subreddit rules.
-4.  Make the content natural and conversational, not like an ad.
-5.  If the style is "Question-based", make the title a question.
+1. Create a catchy, relevant title.
+2. Write engaging content that matches the requested style.
+3. Ensure the post follows ALL provided subreddit rules.
+4. Make the content natural and conversational, not like an ad.
+5. If the style is "Question-based", make the title a question.
 
-**Your response MUST be a single, valid JSON object in the following format. Do not include '` + "```json" + `', '` + "```" + `', or any other text outside the JSON object.**
+**Your response MUST be a single, valid JSON object in the following format. Do not include \`\`\`json, \`\`\`, or any other text outside the JSON object.**
 {
   "title": "Your generated post title here",
   "content": "Your generated post content here, written in markdown-safe text."
@@ -259,15 +291,19 @@ ${topic}
 
         let post;
         try {
-            post = JSON.parse(generatedText);
+            const cleanedText = generatedText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            post = JSON.parse(cleanedText);
         } catch (parseError) {
             console.error("❌ Gemini JSON parse error, falling back:", parseError);
             post = { title: 'Generated Post (Fallback)', content: generatedText };
         }
 
         // Deduct credit
-        const { error: deductError } = await supabase.rpc('decrement_credits', { p_user_id: user.id, p_amount: 1 });
-        if (deductError) throw new Error('Failed to deduct credit.');
+        const { error: deductError } = await supabase.rpc('decrement_credits', { 
+            p_user_id: user.id, 
+            p_amount: 1 
+        });
+        if (deductError) throw new Error('Failed to deduct credit: ' + deductError.message);
         
         // Save to history
         const { data: historyItem, error: historyError } = await supabase
@@ -282,7 +318,7 @@ ${topic}
             .select()
             .single();
             
-        if (historyError) throw new Error('Failed to save history.');
+        if (historyError) throw new Error('Failed to save history: ' + historyError.message);
             
         console.log('✅ Post generated and saved');
 
@@ -300,7 +336,7 @@ ${topic}
 });
 
 // ==========================================
-// AI GENERATION - OPTIMIZE POST (FIXED)
+// AI GENERATION - OPTIMIZE POST
 // ==========================================
 app.post('/api/optimize-post', async (req, res) => {
     try {
@@ -336,11 +372,11 @@ ${content}
 **Optimization Style:** ${style}
 
 **Task:**
-1.  Rewrite the post to ensure it follows ALL subreddit rules.
-2.  Improve clarity, readability, and engagement based on the chosen style.
-3.  Fix any grammar or formatting issues.
-4.  Maintain the original post's core intent.
-5.  Respond with ONLY the optimized post text (no title, no explanations, no "Here is the optimized post:"). Just the raw, improved content.`;
+1. Rewrite the post to ensure it follows ALL subreddit rules.
+2. Improve clarity, readability, and engagement based on the chosen style.
+3. Fix any grammar or formatting issues.
+4. Maintain the original post's core intent.
+5. Respond with ONLY the optimized post text (no title, no explanations, no "Here is the optimized post:"). Just the raw, improved content.`;
 
         const response = await axios.post(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
@@ -352,8 +388,11 @@ ${content}
         if (!optimizedPost) throw new Error('No response from AI');
 
         // Deduct credit
-        const { error: deductError } = await supabase.rpc('decrement_credits', { p_user_id: user.id, p_amount: 1 });
-        if (deductError) throw new Error('Failed to deduct credit.');
+        const { error: deductError } = await supabase.rpc('decrement_credits', { 
+            p_user_id: user.id, 
+            p_amount: 1 
+        });
+        if (deductError) throw new Error('Failed to deduct credit: ' + deductError.message);
         
         // Save to history
         const { data: historyItem, error: historyError } = await supabase
@@ -368,7 +407,7 @@ ${content}
             .select()
             .single();
             
-        if (historyError) throw new Error('Failed to save history.');
+        if (historyError) throw new Error('Failed to save history: ' + historyError.message);
 
         console.log('✅ Post optimized and saved');
 
@@ -393,30 +432,54 @@ app.post('/api/dodo/create-session', async (req, res) => {
         const user = await getAuthUser(req);
         const { plan, postsPerMonth, billingCycle, amount, transactionId } = req.body;
         
-        console.log('\n💳 Creating payment session:', { userId: user.id, plan, amount, mode: DODO_MODE });
+        console.log('\n💳 Creating payment session:', { 
+            userId: user.id, 
+            plan, 
+            amount, 
+            mode: DODO_MODE,
+            transactionId 
+        });
+
+        // Validate input
+        if (!plan || !postsPerMonth || !billingCycle || !amount || !transactionId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required payment parameters' 
+            });
+        }
 
         // Store pending payment in database
         const { error: dbError } = await supabase.from('payments').insert([{
             user_id: user.id,
             transaction_id: transactionId,
             plan_type: plan,
-            amount: amount,
-            posts_per_month: postsPerMonth,
+            amount: parseFloat(amount),
+            posts_per_month: parseInt(postsPerMonth),
             billing_cycle: billingCycle,
             status: 'pending',
             customer_email: user.email,
             created_at: new Date().toISOString()
         }]);
 
-        if (dbError) throw dbError;
+        if (dbError) {
+            console.error('❌ Database error:', dbError);
+            throw new Error('Failed to create payment record: ' + dbError.message);
+        }
 
         // ========== TEST MODE ==========
         if (DODO_MODE === 'test') {
             console.log('🧪 TEST MODE: Creating mock payment');
             const sessionId = `test_session_${transactionId}`;
             
-            // In test mode, we manually call the webhook logic to simulate success
-            await activateUserPlan(user.id, transactionId, plan, postsPerMonth, billingCycle, amount);
+            // Simulate payment success after 2 seconds
+            setTimeout(async () => {
+                try {
+                    await activateUserPlan(user.id, transactionId, plan, postsPerMonth, billingCycle, amount);
+                    console.log('✅ TEST MODE: Payment activated automatically');
+                } catch (error) {
+                    console.error('❌ TEST MODE: Failed to activate plan:', error);
+                }
+            }, 2000);
             
             const mockPaymentUrl = `${FRONTEND_URL}/dashboard.html?payment=success&session_id=${sessionId}`;
             
@@ -430,27 +493,31 @@ app.post('/api/dodo/create-session', async (req, res) => {
 
         // ========== PRODUCTION MODE ==========
         console.log('🚀 PRODUCTION MODE: Calling Dodo API');
-        if (!DODO_API_KEY) throw new Error('Dodo API key not configured');
+        if (!DODO_API_KEY) {
+            throw new Error('Dodo API key not configured in production mode');
+        }
 
         const dodoPayload = {
-            amount: Math.round(amount * 100), // Amount in cents/paise
-            currency: 'USD', // Or your currency
+            amount: Math.round(parseFloat(amount) * 100), // Convert to cents
+            currency: 'USD',
             success_url: `${FRONTEND_URL}/dashboard.html?payment=success&txn=${transactionId}`,
             cancel_url: `${FRONTEND_URL}/dashboard.html?payment=cancelled`,
             notify_url: `${BACKEND_URL}/api/dodo/webhook`,
-            customer_email: user.email, // <-- FIXED
-            metadata: { // <-- FIXED
+            customer_email: user.email,
+            metadata: {
                 userId: user.id,
                 planType: plan,
-                postsPerMonth: postsPerMonth,
+                postsPerMonth: parseInt(postsPerMonth),
                 billingCycle: billingCycle,
                 transactionId: transactionId,
                 email: user.email
             }
         };
 
+        console.log('📤 Sending to Dodo:', JSON.stringify(dodoPayload, null, 2));
+
         const dodoResponse = await axios.post(
-            'https://api.dodopayments.com/v1/payment_links/checkout', // Using your original endpoint
+            'https://api.dodopayments.com/v1/payment_links/checkout',
             dodoPayload,
             {
                 headers: {
@@ -462,6 +529,7 @@ app.post('/api/dodo/create-session', async (req, res) => {
         );
 
         const sessionData = dodoResponse.data;
+        console.log('📥 Dodo response:', sessionData);
         
         // Update payment record with Dodo's session ID
         await supabase
@@ -473,24 +541,24 @@ app.post('/api/dodo/create-session', async (req, res) => {
 
         res.json({
             success: true,
-            paymentUrl: sessionData.url, // Dodo's checkout URL
+            paymentUrl: sessionData.url,
             sessionId: sessionData.id
         });
         
     } catch (error) {
         console.error('❌ Payment error:', error.response?.data || error.message);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to create payment session';
         res.status(500).json({ 
             success: false, 
-            error: error.response?.data?.message || 'Failed to create payment session'
+            error: errorMessage
         });
     }
 });
 
 // ==========================================
-// DODO WEBHOOK (FIXED)
+// DODO WEBHOOK
 // ==========================================
 
-// Helper function to activate a user's plan
 async function activateUserPlan(userId, transactionId, planType, postsPerMonth, billingCycle, amount) {
     console.log(`🚀 Activating plan for user ${userId}`);
     
@@ -501,7 +569,7 @@ async function activateUserPlan(userId, transactionId, planType, postsPerMonth, 
         expiryDate.setMonth(expiryDate.getMonth() + 1);
     }
 
-    // 1. Update the user_plans table
+    // Update the user_plans table
     const { error: planError } = await supabase
         .from('user_plans')
         .upsert({
@@ -519,10 +587,10 @@ async function activateUserPlan(userId, transactionId, planType, postsPerMonth, 
         
     if (planError) {
         console.error('❌ Error activating plan:', planError);
-        return false;
+        throw planError;
     }
 
-    // 2. Update the payments table
+    // Update the payments table
     const { error: paymentError } = await supabase
         .from('payments')
         .update({
@@ -533,7 +601,7 @@ async function activateUserPlan(userId, transactionId, planType, postsPerMonth, 
 
     if (paymentError) {
         console.error('❌ Error updating payment status:', paymentError);
-        return false;
+        throw paymentError;
     }
     
     console.log(`✅ Plan activated for user: ${userId}`);
@@ -543,13 +611,10 @@ async function activateUserPlan(userId, transactionId, planType, postsPerMonth, 
 app.post('/api/dodo/webhook', async (req, res) => {
     const event = req.body;
     console.log('\n🔔 Webhook received:', event.type);
-    
-    // Log the full event for debugging
-    // console.log(JSON.stringify(event, null, 2));
+    console.log('📦 Full webhook data:', JSON.stringify(event, null, 2));
 
     try {
         if (event.type === 'checkout.session.completed') {
-            // FIXED: Metadata is in event.data.object.metadata
             const metadata = event.data?.object?.metadata;
             
             if (!metadata || !metadata.userId || !metadata.transactionId) {
@@ -559,14 +624,13 @@ app.post('/api/dodo/webhook', async (req, res) => {
 
             console.log('💰 Payment completed for user:', metadata.userId);
 
-            // Activate the plan
             await activateUserPlan(
                 metadata.userId,
                 metadata.transactionId,
                 metadata.planType,
                 metadata.postsPerMonth,
                 metadata.billingCycle,
-                event.data.object.amount_total / 100 // Convert from cents
+                event.data.object.amount_total / 100
             );
         }
 
@@ -582,7 +646,6 @@ app.post('/api/dodo/webhook', async (req, res) => {
 // USER AUTH / SETTINGS ENDPOINTS
 // ==========================================
 
-// Change Password
 app.post('/api/auth/change-password', async (req, res) => {
     try {
         const user = await getAuthUser(req);
@@ -607,11 +670,9 @@ app.post('/api/auth/change-password', async (req, res) => {
     }
 });
 
-// Logout All Devices
 app.post('/api/auth/logout-all', async (req, res) => {
     try {
         const user = await getAuthUser(req);
-        // This signs out the user from all sessions, including the current one.
         const { error } = await supabase.auth.admin.signOut(user.id);
         
         if (error) throw error;
@@ -624,13 +685,11 @@ app.post('/api/auth/logout-all', async (req, res) => {
     }
 });
 
-// Delete Account
 app.post('/api/auth/delete-account', async (req, res) => {
     try {
         const user = await getAuthUser(req);
         const { password } = req.body;
 
-        // Verify password before deleting
         const { error: loginError } = await supabase.auth.signInWithPassword({
             email: user.email,
             password: password,
@@ -640,7 +699,6 @@ app.post('/api/auth/delete-account', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Invalid password' });
         }
 
-        // Delete the user
         const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
         if (deleteError) throw deleteError;
 
