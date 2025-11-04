@@ -5,7 +5,7 @@
 // --- SUPABASE & API CONFIG ---
 const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8';
-const API_URL = 'https://redrules.onrender.com'; // <-- This is now correct
+const API_URL = 'https://redrules.onrender.com';
 
 // --- GLOBAL STATE ---
 let supabaseClient = null;
@@ -76,6 +76,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!window.bootstrap) throw new Error('Bootstrap library not loaded.');
         initBootstrapComponents();
         
+        
+        // --- FIX: RUN THESE IMMEDIATELY ---
+        // Make the UI interactive *before* waiting for data
+        initializeEventListeners();
+        updatePricingDisplay();
+        // --- END FIX ---
+        
+        
         await handlePaymentCallback();
         
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
@@ -101,9 +109,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
         
+        // This will now run, but the UI is already interactive
         await checkAuthState();
-        initializeEventListeners();
-        updatePricingDisplay();
 
     } catch (error) {
         console.error('❌ FATAL: Dashboard initialization failed:', error);
@@ -135,7 +142,7 @@ async function wakeUpServer() {
     if (isServerAwake) return; 
 
     console.log('Pinging server to wake it up...');
-    showToast('Waking up server... this can take up to 60s.', 'info');
+    showToast('Waking up server... (can take 60s)', 'info');
     try {
         const startTime = Date.now();
         const response = await fetch(API_URL, { method: 'GET' }); 
@@ -143,7 +150,7 @@ async function wakeUpServer() {
         
         const duration = (Date.now() - startTime) / 1000;
         console.log(`Server is awake (Took ${duration.toFixed(2)}s)`);
-        showToast('Server is awake! Loading your data.', 'success');
+        showToast('Server is awake! Loading data...', 'success');
         isServerAwake = true;
     } catch (error) {
         console.error('❌ Server ping failed:', error);
@@ -229,7 +236,6 @@ function showDataErrorState(errorMessage) {
 }
 
 
-// --- THIS FUNCTION IS MODIFIED WITH MORE LOGS ---
 async function loadUserData() {
     if (!currentUser) return;
     
@@ -245,18 +251,17 @@ async function loadUserData() {
         const token = session.access_token;
         console.log('[loadUserData] Got token. Fetching from API... (This may take 30-60s for the database to wake up)');
         
-        // This is the line that is hanging
         const response = await fetch(`${API_URL}/api/user/data`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        console.log(`[loadUserData] Fetch complete. Status: ${response.status}`); // <-- NEW LOG
+        console.log(`[loadUserData] Fetch complete. Status: ${response.status}`); 
 
         if (!response.ok) {
             throw new Error(`Failed to fetch user data (Status: ${response.status})`);
         }
 
         const data = await response.json();
-        console.log('[loadUserData] Got JSON data.'); // <-- NEW LOG
+        console.log('[loadUserData] Got JSON data.'); 
         
         if (data.success) {
             console.log('[loadUserData] Data.success == true. Fetch successful.');
@@ -265,7 +270,7 @@ async function loadUserData() {
             userHistory = data.history || [];
             updateUI(); 
         } else {
-            console.log(`[loadUserData] Data.success == false. Error: ${data.error}`); // <-- NEW LOG
+            console.log(`[loadUserData] Data.success == false. Error: ${data.error}`); 
             throw new Error(data.error || 'Could not load data');
         }
 
@@ -274,7 +279,6 @@ async function loadUserData() {
         showDataErrorState(error.message); 
     }
 }
-// --- END OF MODIFIED FUNCTION ---
 
 
 function updateUI() {
@@ -697,10 +701,14 @@ async function handlePaymentCallback() {
 }
 
 function updatePricingDisplay() {
-    const cycle = document.querySelector('input[name="billingCycle"]:checked').value;
+    const cycleInput = document.querySelector('input[name="billingCycle"]:checked');
+    if (!cycleInput) return; // Exit if pricing page elements aren't loaded (e.g., on init)
+    
+    const cycle = cycleInput.value;
     
     Object.keys(PRICING_DATA).forEach(plan => {
         const data = PRICING_DATA[plan][cycle];
+        // Add null checks for safety
         setText(`${plan}Price`, `$${data.price}`);
         setText(`${plan}Posts`, `${data.posts} Posts Per ${cycle === 'yearly' ? 'Year' : 'Month'}`);
         setText(`${plan}Billing`, cycle === 'yearly' ? '/year' : '/month');
@@ -900,7 +908,10 @@ function initializeEventListeners() {
     document.getElementById('monthlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('yearlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('saveProfileBtn')?.addEventListener('click', handleSaveProfile);
-    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChange.password);
+    
+    // --- FIX: Corrected typo from handleChange.password to handleChangePassword ---
+    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword); 
+    
     document.getElementById('logoutAllBtn')?.addEventListener('click', handleLogoutAll);
     document.getElementById('deleteAccountBtn')?.addEventListener('click', handleDeleteAccount);
     document.getElementById('viewPostCopyBtn')?.addEventListener('click', () => {
