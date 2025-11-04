@@ -16,12 +16,10 @@ app.use(express.static(path.join(__dirname)));
 // ==========================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const DODO_API_KEY = process.env.DODO_API_KEY || '';
-const DODO_MODE = process.env.DODO_MODE || 'test';
-const DODO_BASE_URL = DODO_MODE === 'test' 
-    ? 'https://test-api.dodopayments.com' 
-    : 'https://api.dodopayments.com';
+const DODO_MODE = process.env.DODO_MODE || 'production';
+const DODO_BASE_URL = 'https://api.dodopayments.com';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://redditfix.vercel.app';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://redrules.onrender.com';
 
 // Supabase configuration
 const { createClient } = require('@supabase/supabase-js');
@@ -306,27 +304,26 @@ WRITE ONLY THE OPTIMIZED POST:`;
 });
 
 // ==========================================
-// DODO PAYMENTS ENDPOINTS
+// DODO PAYMENTS - PRODUCTION MODE
 // ==========================================
 
-/**
- * CREATE PAYMENT SESSION
- * POST /api/dodo/create-session
- */
 app.post('/api/dodo/create-session', async (req, res) => {
   try {
     const { userId, plan, email, amount, postsPerMonth, billingCycle, transactionId } = req.body;
     
     console.log('\n💳 Creating payment session:', { userId, plan, amount });
-    
+
     if (!DODO_API_KEY) {
+        console.error('❌ DODO_API_KEY is missing!');
         return res.status(400).json({ 
             success: false, 
             error: 'Dodo API key not configured' 
         });
     }
 
-    // Create payment session via Dodo API
+    console.log('🚀 PRODUCTION MODE: Calling real Dodo API');
+
+    // Create payment session via real Dodo API
     const dodoResponse = await axios.post(`${DODO_BASE_URL}/v1/checkout/sessions`, {
         amount: Math.round(amount * 100), // Convert to cents
         currency: 'USD',
@@ -370,7 +367,7 @@ app.post('/api/dodo/create-session', async (req, res) => {
         }]);
 
     if (dbError) {
-        console.error('❌ Database error:', dbError);
+        console.error('⚠️ Database error:', dbError);
     }
 
     res.json({
@@ -389,10 +386,6 @@ app.post('/api/dodo/create-session', async (req, res) => {
   }
 });
 
-/**
- * VERIFY PAYMENT SUCCESS
- * POST /api/dodo/verify-payment
- */
 app.post('/api/dodo/verify-payment', async (req, res) => {
     try {
         const { sessionId, userId } = req.body;
@@ -501,10 +494,6 @@ app.post('/api/dodo/verify-payment', async (req, res) => {
     }
 });
 
-/**
- * WEBHOOK - Dodo Payment Notifications
- * POST /api/dodo/webhook
- */
 app.post('/api/dodo/webhook', async (req, res) => {
     try {
         const event = req.body;
@@ -589,10 +578,6 @@ app.post('/api/dodo/webhook', async (req, res) => {
     }
 });
 
-/**
- * GET USER SUBSCRIPTION STATUS
- * GET /api/user/subscription/:userId
- */
 app.get('/api/user/subscription/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -639,10 +624,6 @@ app.get('/api/user/subscription/:userId', async (req, res) => {
     }
 });
 
-/**
- * GET PAYMENT HISTORY
- * GET /api/user/payments/:userId
- */
 app.get('/api/user/payments/:userId', async (req, res) => {
     try {
         const userId = req.params.userId;
@@ -673,7 +654,7 @@ app.get('/api/user/payments/:userId', async (req, res) => {
 });
 
 // ==========================================
-// ERROR HANDLING MIDDLEWARE
+// ERROR HANDLING
 // ==========================================
 app.use((err, req, res, next) => {
     console.error('❌ Server error:', err);
@@ -683,9 +664,6 @@ app.use((err, req, res, next) => {
     });
 });
 
-// ==========================================
-// 404 HANDLER
-// ==========================================
 app.use((req, res) => {
     res.status(404).json({ error: 'Endpoint not found', path: req.path });
 });
@@ -699,7 +677,7 @@ app.listen(PORT, () => {
     console.log(`✅ ReddiGen Backend RUNNING!`);
     console.log(`🚀 Backend listening on port ${PORT}`);
     console.log(`📝 Features: Reddit API, Gemini AI, Payment Processing`);
-    console.log(`💳 Dodo Mode: ${DODO_MODE.toUpperCase()}`);
+    console.log(`💳 Dodo Mode: PRODUCTION`);
     console.log(`🌐 Frontend: ${FRONTEND_URL}`);
     console.log(`${'='.repeat(70)}\n`);
 });
