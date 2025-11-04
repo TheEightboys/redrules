@@ -158,13 +158,19 @@ async function deductCreditFromDatabase() {
 // AUTHENTICATION FUNCTIONS
 // ============================================
 function showAuthModal() {
-    const authModal = new bootstrap.Modal(document.getElementById('authModal'));
-    authModal.show();
+    const authModalEl = document.getElementById('authModal');
+    if (authModalEl) {
+        const authModal = new bootstrap.Modal(authModalEl);
+        authModal.show();
+    }
 }
 
 function hideAuthModal() {
-    const authModal = bootstrap.Modal.getInstance(document.getElementById('authModal'));
-    if (authModal) authModal.hide();
+    const authModalEl = document.getElementById('authModal');
+    if (authModalEl) {
+        const authModal = bootstrap.Modal.getInstance(authModalEl);
+        if (authModal) authModal.hide();
+    }
 }
 
 async function handleLogin(e) {
@@ -186,6 +192,7 @@ async function handleLogin(e) {
         updateStatsDisplay();
         updateCreditsDisplay();
         updatePlanUI();
+        displayHistory();
         
         showToast('Welcome back!', 'success');
     } catch (error) {
@@ -209,8 +216,10 @@ async function handleSignup(e) {
         if (error) throw error;
         
         showToast('Account created! Check your email to verify.', 'success');
-        document.getElementById('signupSection').style.display = 'none';
-        document.getElementById('emailAuthSection').style.display = 'block';
+        const signupSection = document.getElementById('signupSection');
+        const emailAuthSection = document.getElementById('emailAuthSection');
+        if (signupSection) signupSection.style.display = 'none';
+        if (emailAuthSection) emailAuthSection.style.display = 'block';
     } catch (error) {
         showToast('Signup failed: ' + error.message, 'error');
     }
@@ -226,16 +235,18 @@ async function handleSignOut() {
         localStorage.clear();
         showAuthModal();
         showToast('Signed out successfully', 'success');
+        
+        // Reset UI
+        navigateToPage('aiGenerator');
     } catch (error) {
         showToast('Sign out failed: ' + error.message, 'error');
     }
 }
 
 // ============================================
-// PAYMENT FUNCTIONS - FIXED
+// PAYMENT FUNCTIONS
 // ============================================
 async function initiateDodoPayment(planType) {
-    // CHECK AUTHENTICATION FIRST
     if (!currentUser) {
         showToast('⚠️ Please sign in to purchase a plan', 'warning');
         showAuthModal();
@@ -257,7 +268,6 @@ async function initiateDodoPayment(planType) {
         const userEmail = currentUser.email;
         const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         
-        // Store payment info as backup
         localStorage.setItem('pendingPayment', JSON.stringify({
             userId: userId,
             planType: planType,
@@ -269,7 +279,6 @@ async function initiateDodoPayment(planType) {
         
         showToast('Creating payment session...', 'info');
         
-        // Call backend to create Dodo session
         const response = await fetch(`${API_URL}/api/dodo/create-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -296,8 +305,6 @@ async function initiateDodoPayment(planType) {
         }
         
         console.log('✅ Payment session created');
-        console.log('🔗 Payment URL:', data.paymentUrl);
-        
         localStorage.setItem('paymentSessionId', data.sessionId);
         
         showToast('Redirecting to payment...', 'success');
@@ -322,7 +329,6 @@ async function handlePaymentSuccess() {
     
     if (paymentStatus === 'success') {
         console.log('✅ Payment success detected!');
-        
         showToast('🎉 Payment successful! Activating your plan...', 'success');
         
         const pendingPayment = localStorage.getItem('pendingPayment');
@@ -413,6 +419,9 @@ function setupPricingToggle() {
         monthlyRadio.addEventListener('change', () => updatePricingDisplay('monthly'));
         yearlyRadio.addEventListener('change', () => updatePricingDisplay('yearly'));
     }
+    
+    // Initialize with monthly pricing
+    updatePricingDisplay('monthly');
 }
 
 function updatePricingDisplay(billingCycle) {
@@ -435,32 +444,37 @@ function updatePricingDisplay(billingCycle) {
 }
 
 // ============================================
-// REST OF YOUR EXISTING FUNCTIONS
-// (Keep all your other functions like handleAIGenerate, 
-// handleOptimizePost, etc. - they remain unchanged)
+// NAVIGATION
 // ============================================
-
 function navigateToPage(pageName) {
-    console.log('Navigating to:', pageName);
+    console.log('🔄 Navigating to:', pageName);
     
+    // Hide all sections
     document.querySelectorAll('.content-section').forEach(section => {
         section.classList.remove('active');
     });
     
+    // Remove active class from all sidebar items
     document.querySelectorAll('.sidebar-item').forEach(item => {
         item.classList.remove('active');
     });
     
+    // Show target section
     const targetSection = document.getElementById(pageName + 'Section');
     if (targetSection) {
         targetSection.classList.add('active');
+        console.log('✅ Section activated:', pageName);
+    } else {
+        console.error('❌ Section not found:', pageName + 'Section');
     }
     
+    // Activate corresponding sidebar item
     const activeMenuItem = document.querySelector(`[data-page="${pageName}"]`);
     if (activeMenuItem) {
         activeMenuItem.classList.add('active');
     }
     
+    // Update page title
     const pageTitles = {
         aiGenerator: 'AI Generator',
         contentOptimizer: 'Content Optimizer',
@@ -474,34 +488,66 @@ function navigateToPage(pageName) {
     if (pageTitle) {
         pageTitle.textContent = pageTitles[pageName] || pageName;
     }
+    
+    // Close mobile sidebar if open
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && sidebar.classList.contains('active')) {
+        sidebar.classList.remove('active');
+    }
 }
 
+// ============================================
+// EVENT LISTENERS
+// ============================================
 function initializeEventListeners() {
-    document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
-    document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
-    document.getElementById('signOutBtn')?.addEventListener('click', handleSignOut);
-    document.getElementById('dropdownSignOutBtn')?.addEventListener('click', handleSignOut);
+    // Auth forms
+    const loginForm = document.getElementById('loginForm');
+    const signupForm = document.getElementById('signupForm');
+    const signOutBtn = document.getElementById('signOutBtn');
+    const dropdownSignOutBtn = document.getElementById('dropdownSignOutBtn');
     
-    document.getElementById('showSignupLink')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('emailAuthSection').style.display = 'none';
-        document.getElementById('signupSection').style.display = 'block';
-    });
+    if (loginForm) loginForm.addEventListener('submit', handleLogin);
+    if (signupForm) signupForm.addEventListener('submit', handleSignup);
+    if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
+    if (dropdownSignOutBtn) dropdownSignOutBtn.addEventListener('click', handleSignOut);
     
-    document.getElementById('showLoginLink')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('signupSection').style.display = 'none';
-        document.getElementById('emailAuthSection').style.display = 'block';
-    });
+    // Auth section toggles
+    const showSignupLink = document.getElementById('showSignupLink');
+    const showLoginLink = document.getElementById('showLoginLink');
     
+    if (showSignupLink) {
+        showSignupLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const emailAuthSection = document.getElementById('emailAuthSection');
+            const signupSection = document.getElementById('signupSection');
+            if (emailAuthSection) emailAuthSection.style.display = 'none';
+            if (signupSection) signupSection.style.display = 'block';
+        });
+    }
+    
+    if (showLoginLink) {
+        showLoginLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const signupSection = document.getElementById('signupSection');
+            const emailAuthSection = document.getElementById('emailAuthSection');
+            if (signupSection) signupSection.style.display = 'none';
+            if (emailAuthSection) emailAuthSection.style.display = 'block';
+        });
+    }
+    
+    // Sidebar navigation
     document.querySelectorAll('.sidebar-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
             const page = item.getAttribute('data-page');
-            if (page) navigateToPage(page);
+            if (page) {
+                console.log('Sidebar click:', page);
+                navigateToPage(page);
+            }
         });
     });
     
+    // Dropdown navigation
     document.querySelectorAll('.dropdown-item[data-page]').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -510,24 +556,321 @@ function initializeEventListeners() {
         });
     });
     
-    document.getElementById('aiGenerateBtn')?.addEventListener('click', handleAIGenerate);
-    document.getElementById('optimizerOptimizeBtn')?.addEventListener('click', handleOptimizePost);
+    // AI Generator button
+    const aiGenerateBtn = document.getElementById('aiGenerateBtn');
+    if (aiGenerateBtn) {
+        aiGenerateBtn.addEventListener('click', handleAIGenerate);
+    }
     
-    document.getElementById('sidebarToggle')?.addEventListener('click', () => {
-        document.getElementById('sidebar')?.classList.toggle('active');
-    });
+    // Optimizer button
+    const optimizerBtn = document.getElementById('optimizerOptimizeBtn');
+    if (optimizerBtn) {
+        optimizerBtn.addEventListener('click', handleOptimizePost);
+    }
+    
+    // Mobile sidebar toggle
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+        });
+    }
 }
 
-// Keep all your existing AI and optimization functions...
+// ============================================
+// AI GENERATION
+// ============================================
 async function handleAIGenerate() {
-    // Your existing code
+    const subreddit = document.getElementById('subredditInput')?.value.trim();
+    const description = document.getElementById('descriptionInput')?.value.trim();
+    const tone = document.getElementById('toneSelect')?.value || 'casual';
+    
+    if (!subreddit || !description) {
+        showToast('Please fill in all fields', 'warning');
+        return;
+    }
+    
+    if (!currentUser) {
+        showToast('Please sign in to generate posts', 'warning');
+        showAuthModal();
+        return;
+    }
+    
+    if (!hasCreditsLeft()) {
+        showToast('No credits remaining. Please upgrade your plan.', 'error');
+        navigateToPage('pricing');
+        return;
+    }
+    
+    const generateBtn = document.getElementById('aiGenerateBtn');
+    const outputDiv = document.getElementById('generatedOutput');
+    
+    if (generateBtn) {
+        generateBtn.disabled = true;
+        generateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Generating...';
+    }
+    
+    try {
+        // Fetch Reddit rules
+        showToast('Fetching subreddit rules...', 'info');
+        const rulesResponse = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
+        
+        if (!rulesResponse.ok) {
+            throw new Error('Failed to fetch subreddit rules');
+        }
+        
+        const rulesData = await rulesResponse.json();
+        
+        // Generate post
+        showToast('Generating post...', 'info');
+        const response = await fetch(`${API_URL}/api/generate-post`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subreddit: subreddit,
+                description: description,
+                tone: tone,
+                rules: rulesData.rules
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to generate post');
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.post) {
+            // Deduct credit
+            const creditDeducted = await deductCreditFromDatabase();
+            
+            if (creditDeducted) {
+                // Display result
+                if (outputDiv) {
+                    outputDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h5>✅ Post Generated!</h5>
+                            <div class="mt-3">
+                                <strong>Title:</strong>
+                                <p>${data.post.title || 'No title'}</p>
+                                <strong>Content:</strong>
+                                <p style="white-space: pre-wrap;">${data.post.content || data.post}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Save to history
+                const newPost = {
+                    id: Date.now(),
+                    type: 'generated',
+                    subreddit: subreddit,
+                    title: data.post.title || 'Untitled',
+                    content: data.post.content || data.post,
+                    timestamp: new Date().toISOString()
+                };
+                
+                userPostHistory.unshift(newPost);
+                localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
+                displayHistory();
+                
+                showToast('Post generated successfully!', 'success');
+            } else {
+                showToast('Failed to deduct credit', 'error');
+            }
+        } else {
+            throw new Error('Invalid response from server');
+        }
+        
+    } catch (error) {
+        console.error('❌ Generation error:', error);
+        showToast('Error: ' + error.message, 'error');
+        
+        if (outputDiv) {
+            outputDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
+        }
+    } finally {
+        if (generateBtn) {
+            generateBtn.disabled = false;
+            generateBtn.innerHTML = '<i class="fas fa-magic me-2"></i>Generate Post';
+        }
+    }
 }
 
+// ============================================
+// POST OPTIMIZATION
+// ============================================
 async function handleOptimizePost() {
-    // Your existing code
+    const postContent = document.getElementById('optimizerPostInput')?.value.trim();
+    const subreddit = document.getElementById('optimizerSubredditInput')?.value.trim();
+    
+    if (!postContent || !subreddit) {
+        showToast('Please fill in all fields', 'warning');
+        return;
+    }
+    
+    if (!currentUser) {
+        showToast('Please sign in to optimize posts', 'warning');
+        showAuthModal();
+        return;
+    }
+    
+    if (!hasCreditsLeft()) {
+        showToast('No credits remaining. Please upgrade your plan.', 'error');
+        navigateToPage('pricing');
+        return;
+    }
+    
+    const optimizeBtn = document.getElementById('optimizerOptimizeBtn');
+    const outputDiv = document.getElementById('optimizedOutput');
+    
+    if (optimizeBtn) {
+        optimizeBtn.disabled = true;
+        optimizeBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Optimizing...';
+    }
+    
+    try {
+        // Fetch Reddit rules
+        showToast('Fetching subreddit rules...', 'info');
+        const rulesResponse = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
+        
+        if (!rulesResponse.ok) {
+            throw new Error('Failed to fetch subreddit rules');
+        }
+        
+        const rulesData = await rulesResponse.json();
+        
+        // Optimize post
+        showToast('Optimizing post...', 'info');
+        const response = await fetch(`${API_URL}/api/optimize-post`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                subreddit: subreddit,
+                postContent: postContent,
+                rules: rulesData.rules
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to optimize post');
+        }
+        
+        const data = await response.json();
+        
+        if (data.success && data.optimizedPost) {
+            // Deduct credit
+            const creditDeducted = await deductCreditFromDatabase();
+            
+            if (creditDeducted) {
+                // Display result
+                if (outputDiv) {
+                    outputDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <h5>✅ Post Optimized!</h5>
+                            <div class="mt-3">
+                                <strong>Optimized Content:</strong>
+                                <p style="white-space: pre-wrap;">${data.optimizedPost}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // Save to history
+                const newPost = {
+                    id: Date.now(),
+                    type: 'optimized',
+                    subreddit: subreddit,
+                    title: 'Optimized Post',
+                    content: data.optimizedPost,
+                    timestamp: new Date().toISOString()
+                };
+                
+                userPostHistory.unshift(newPost);
+                localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
+                displayHistory();
+                
+                showToast('Post optimized successfully!', 'success');
+            } else {
+                showToast('Failed to deduct credit', 'error');
+            }
+        } else {
+            throw new Error('Invalid response from server');
+        }
+        
+    } catch (error) {
+        console.error('❌ Optimization error:', error);
+        showToast('Error: ' + error.message, 'error');
+        
+        if (outputDiv) {
+            outputDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Error:</strong> ${error.message}
+                </div>
+            `;
+        }
+    } finally {
+        if (optimizeBtn) {
+            optimizeBtn.disabled = false;
+            optimizeBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>Optimize';
+        }
+    }
 }
 
-// Utility functions
+// ============================================
+// HISTORY DISPLAY
+// ============================================
+function displayHistory() {
+    const historyContainer = document.getElementById('historyContainer');
+    
+    if (!historyContainer) {
+        console.warn('⚠️ History container not found');
+        return;
+    }
+    
+    if (userPostHistory.length === 0) {
+        historyContainer.innerHTML = `
+            <div class="text-center text-muted py-5">
+                <i class="fas fa-inbox fa-3x mb-3"></i>
+                <p>No posts yet. Generate your first post!</p>
+            </div>
+        `;
+        return;
+    }
+    
+    historyContainer.innerHTML = userPostHistory.map(post => `
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">${post.title}</h5>
+                    <span class="badge bg-${post.type === 'generated' ? 'primary' : 'success'}">
+                        ${post.type === 'generated' ? 'Generated' : 'Optimized'}
+                    </span>
+                </div>
+                <p class="text-muted small mb-2">
+                    <i class="fas fa-reddit me-1"></i>r/${post.subreddit} • 
+                    ${new Date(post.timestamp).toLocaleString()}
+                </p>
+                <p class="card-text" style="white-space: pre-wrap;">${post.content}</p>
+                <button class="btn btn-sm btn-outline-primary" onclick="copyToClipboard(\`${post.content.replace(/`/g, '\\`')}\`)">
+                    <i class="fas fa-copy me-1"></i>Copy
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteHistoryItem(${post.id})">
+                    <i class="fas fa-trash me-1"></i>Delete
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// ============================================
+// UTILITY FUNCTIONS
+// ============================================
 function hasCreditsLeft() {
     return userCredits > 0;
 }
@@ -548,7 +891,12 @@ function resetPlanToFree() {
 function loadUserData() {
     const savedHistory = localStorage.getItem('userPostHistory');
     if (savedHistory) {
-        userPostHistory = JSON.parse(savedHistory);
+        try {
+            userPostHistory = JSON.parse(savedHistory);
+        } catch (error) {
+            console.error('Error loading history:', error);
+            userPostHistory = [];
+        }
     }
 }
 
@@ -593,14 +941,52 @@ function updatePlanUI() {
         
         planBadge.classList.add(colorMap[userPlan.tier] || 'bg-secondary');
     }
+    
+    // Update plan details in profile section
+    const profilePlanName = document.getElementById('profilePlanName');
+    const profileCredits = document.getElementById('profileCredits');
+    const profileBillingCycle = document.getElementById('profileBillingCycle');
+    
+    if (profilePlanName) profilePlanName.textContent = userPlan.name;
+    if (profileCredits) profileCredits.textContent = `${userCredits} / ${userPlan.postsPerMonth}`;
+    if (profileBillingCycle && userPlan.billingCycle) {
+        profileBillingCycle.textContent = userPlan.billingCycle.charAt(0).toUpperCase() + userPlan.billingCycle.slice(1);
+    }
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        showToast('Failed to copy', 'error');
+    });
+}
+
+function deleteHistoryItem(postId) {
+    if (confirm('Are you sure you want to delete this post?')) {
+        userPostHistory = userPostHistory.filter(post => post.id !== postId);
+        localStorage.setItem('userPostHistory', JSON.stringify(userPostHistory));
+        displayHistory();
+        updateStatsDisplay();
+        showToast('Post deleted', 'success');
+    }
 }
 
 function showToast(message, type = 'info') {
-    const toastContainer = document.getElementById('toastContainer') || document.body;
+    const toastContainer = document.getElementById('toastContainer');
+    
+    if (!toastContainer) {
+        console.warn('Toast container not found');
+        return;
+    }
     
     const toast = document.createElement('div');
-    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'primary'} border-0`;
+    toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'primary'} border-0`;
     toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+    
     toast.innerHTML = `
         <div class="d-flex">
             <div class="toast-body">${message}</div>
@@ -609,10 +995,10 @@ function showToast(message, type = 'info') {
     `;
     
     toastContainer.appendChild(toast);
-    const bsToast = new bootstrap.Toast(toast);
+    const bsToast = new bootstrap.Toast(toast, { delay: 5000 });
     bsToast.show();
     
-    setTimeout(() => toast.remove(), 5000);
+    setTimeout(() => toast.remove(), 6000);
 }
 
 function createConfetti() {
@@ -624,3 +1010,13 @@ function createConfetti() {
         });
     }
 }
+
+// ============================================
+// EXPOSE FUNCTIONS GLOBALLY
+// ============================================
+window.navigateToPage = navigateToPage;
+window.initiateDodoPayment = initiateDodoPayment;
+window.copyToClipboard = copyToClipboard;
+window.deleteHistoryItem = deleteHistoryItem;
+
+console.log('✅ Dashboard.js loaded successfully');

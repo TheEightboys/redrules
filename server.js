@@ -31,7 +31,8 @@ app.get('/api/test', (req, res) => {
     res.json({ 
         message: '✅ Server is working!',
         mode: DODO_MODE,
-        features: ['Reddit Generation', 'Post Optimization', 'Dodo Payments']
+        features: ['Reddit Generation', 'Post Optimization', 'Dodo Payments'],
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -95,18 +96,166 @@ app.get('/api/reddit-rules/:subreddit', async (req, res) => {
 });
 
 // ==========================================
-// AI GENERATION ENDPOINTS (Keep existing)
+// AI GENERATION - GENERATE POST
 // ==========================================
 app.post('/api/generate-post', async (req, res) => {
-    // Your existing code...
-});
+    try {
+        const { subreddit, description, tone, rules } = req.body;
+        
+        console.log('\n🤖 Generating post for r/' + subreddit);
+        
+        if (!GEMINI_API_KEY) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Gemini API key not configured' 
+            });
+        }
+        
+        const prompt = `You are an expert Reddit post creator. Create an engaging, high-quality post for r/${subreddit}.
 
-app.post('/api/optimize-post', async (req, res) => {
-    // Your existing code...
+**Subreddit Rules:**
+${rules}
+
+**User Request:**
+${description}
+
+**Tone:** ${tone}
+
+**Instructions:**
+1. Create a catchy, relevant title (follow subreddit rules)
+2. Write engaging content that matches the tone
+3. Ensure the post follows ALL subreddit rules
+4. Make it natural and conversational
+5. Include relevant details and context
+
+Respond in JSON format:
+{
+  "title": "Your post title here",
+  "content": "Your post content here"
+}`;
+
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{
+                    parts: [{ text: prompt }]
+                }]
+            },
+            {
+                headers: { 'Content-Type': 'application/json' }
+            }
+        );
+
+        const generatedText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!generatedText) {
+            throw new Error('No response from AI');
+        }
+
+        // Try to parse JSON response
+        let post;
+        try {
+            const jsonMatch = generatedText.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                post = JSON.parse(jsonMatch[0]);
+            } else {
+                post = {
+                    title: 'Generated Post',
+                    content: generatedText
+                };
+            }
+        } catch (parseError) {
+            post = {
+                title: 'Generated Post',
+                content: generatedText
+            };
+        }
+
+        console.log('✅ Post generated successfully');
+
+        res.json({
+            success: true,
+            post: post
+        });
+
+    } catch (error) {
+        console.error('❌ Generation error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to generate post: ' + error.message
+        });
+    }
 });
 
 // ==========================================
-// DODO PAYMENTS - FIXED
+// AI GENERATION - OPTIMIZE POST
+// ==========================================
+app.post('/api/optimize-post', async (req, res) => {
+    try {
+        const { subreddit, postContent, rules } = req.body;
+        
+        console.log('\n⚡ Optimizing post for r/' + subreddit);
+        
+        if (!GEMINI_API_KEY) {
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Gemini API key not configured' 
+            });
+        }
+        
+        const prompt = `You are a Reddit post optimization expert. Improve this post for r/${subreddit}.
+
+**Subreddit Rules:**
+${rules}
+
+**Original Post:**
+${postContent}
+
+**Task:**
+1. Ensure the post follows ALL subreddit rules
+2. Improve clarity and readability
+3. Make it more engaging and natural
+4. Fix any grammar or formatting issues
+5. Maintain the original intent and tone
+
+Respond with ONLY the optimized post text (no explanations or additional commentary).`;
+
+        const response = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+            {
+                contents: [{
+                    parts: [{ text: prompt }]
+                }]
+            },
+            {
+                headers: { 'Content-Type': 'application/json' }
+            }
+        );
+
+        const optimizedPost = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!optimizedPost) {
+            throw new Error('No response from AI');
+        }
+
+        console.log('✅ Post optimized successfully');
+
+        res.json({
+            success: true,
+            optimizedPost: optimizedPost.trim()
+        });
+
+    } catch (error) {
+        console.error('❌ Optimization error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to optimize post: ' + error.message
+        });
+    }
+});
+
+// ==========================================
+// DODO PAYMENTS - CREATE SESSION
 // ==========================================
 app.post('/api/dodo/create-session', async (req, res) => {
     try {
@@ -155,7 +304,7 @@ app.post('/api/dodo/create-session', async (req, res) => {
             });
         }
 
-        // FIXED: Correct Dodo Payments API structure
+        // Correct Dodo Payments API structure
         const dodoPayload = {
             payment_link_id: getDodoPaymentLinkId(plan, billingCycle),
             customer_email: email,
@@ -532,6 +681,7 @@ app.listen(PORT, () => {
     console.log(`🚀 Port: ${PORT}`);
     console.log(`💳 Dodo Mode: ${DODO_MODE.toUpperCase()}`);
     console.log(`🌐 Frontend: ${FRONTEND_URL}`);
+    console.log(`🤖 Gemini API: ${GEMINI_API_KEY ? 'Configured' : 'NOT CONFIGURED'}`);
     console.log(`${'='.repeat(70)}\n`);
 });
 
