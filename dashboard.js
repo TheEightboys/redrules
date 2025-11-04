@@ -663,6 +663,11 @@ async function fetchAndDisplayGuidelines(subreddit, type) {
 // ============================================
 // PAYMENT FUNCTIONS
 // ============================================
+// ============================================
+// FIXED PAYMENT FLOW - USE BACKEND API
+// Replace your initiateDodoPayment function with this
+// ============================================
+
 async function initiateDodoPayment(planType) {
     try {
         console.log('🚀 Initiating payment for plan:', planType);
@@ -689,49 +694,70 @@ async function initiateDodoPayment(planType) {
             return;
         }
         
-        // Get payment link
-        const paymentLinkKey = `${planType}_${billingCycle}`;
-        const paymentUrl = DODO_PAYMENT_LINKS[paymentLinkKey];
-        
-        if (!paymentUrl) {
-            showToast('Payment link not found', 'error');
-            console.error('Missing payment link for:', paymentLinkKey);
-            return;
-        }
-        
-        // Save pending payment to database
+        // Generate transaction ID
         const transactionId = `TXN_${Date.now()}_${Math.random().toString(36).substring(7)}`;
         
-        const savePending = await fetch(`${API_URL}/api/user/plan/pending`, {
+        // Store payment info in localStorage as backup
+        localStorage.setItem('pendingPayment', JSON.stringify({
+            userId: userId,
+            planType: planType,
+            posts: pricingData.posts,
+            billingCycle: billingCycle,
+            amount: pricingData.price,
+            timestamp: Date.now()
+        }));
+        
+        // Show loading state
+        showToast('Creating payment session...', 'info');
+        
+        // Call backend API to create Dodo session
+        const response = await fetch(`${API_URL}/api/dodo/create-session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 userId: userId,
-                planType: planType,
+                plan: planType,
+                email: userEmail,
+                amount: pricingData.price,
                 postsPerMonth: pricingData.posts,
                 billingCycle: billingCycle,
-                amount: pricingData.price,
-                transactionId: transactionId,
-                customerEmail: userEmail
+                transactionId: transactionId
             })
         });
         
-        if (!savePending.ok) {
-            console.error('Failed to save pending payment');
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Failed to create payment session');
         }
         
+        const data = await response.json();
+        
+        if (!data.success || !data.paymentUrl) {
+            throw new Error('Invalid response from payment server');
+        }
+        
+        console.log('✅ Payment session created:', data.sessionId);
+        console.log('🔗 Payment URL:', data.paymentUrl);
+        
+        // Store session ID for verification
+        localStorage.setItem('paymentSessionId', data.sessionId);
+        
         // Redirect to Dodo payment page
-        console.log('✅ Redirecting to payment page:', paymentUrl);
-        window.location.href = paymentUrl;
+        showToast('Redirecting to payment...', 'success');
+        
+        setTimeout(() => {
+            window.location.href = data.paymentUrl;
+        }, 500);
         
     } catch (error) {
         console.error('❌ Payment error:', error);
         showToast('Payment failed: ' + error.message, 'error');
+        localStorage.removeItem('pendingPayment');
     }
 }
 
 // ============================================
-// HANDLE PAYMENT SUCCESS
+// ENHANCED PAYMENT SUCCESS HANDLER
 // ============================================
 async function handlePaymentSuccess() {
     const urlParams = new URLSearchParams(window.location.search);
@@ -742,28 +768,122 @@ async function handlePaymentSuccess() {
         
         showToast('🎉 Payment successful! Activating your plan...', 'success');
         
-        // Wait a moment for webhook to process
-        setTimeout(async () => {
-            // Reload plan from database
-            await loadUserPlanFromDatabase();
-            updatePlanUI();
-            updateCreditsDisplay();
-            
-            showToast('✅ Your plan is now active!', 'success');
-            
-            // Remove payment params from URL
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            // Navigate to AI Generator
-            navigateToPage('aiGenerator');
-            
-        }, 2000);
+        // Get pending payment info
+        const pendingPayment = localStorage.getItem('pendingPayment');
+        const sessionId = localStorage.getItem('paymentSessionId');
+        
+        if (pendingPayment) {
+            try {
+                const paymentData = JSON.parse(pendingPayment);
+                console.log('📦 Found pending payment:', paymentData);
+                
+                // Activate the plan via backend
+                const response = await fetch(`${API_URL}/api/user/plan`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        userId: paymentData.userId,
+                        planType: paymentData.planType,
+                        postsPerMonth: paymentData.posts,
+                        credits: paymentData.posts,
+                        billingCycle: paymentData.billingCycle,
+                        amount: paymentData.amount
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    console.log('✅ Plan activated successfully!');
+                    
+                    // Update local state
+                    userPlan = {
+                        name: paymentData.planType.charAt(0).toUpperCase() + paymentData.planType.slice(1),
+                        tier: paymentData.planType,
+                        credits: paymentData.posts,
+                        postsPerMonth: paymentData.posts,
+                        billingCycle: paymentData.billingCycle,
+                        activated: true
+                    };
+                    userCredits = paymentData.posts;
+                    
+                    // Update UI
+                    updatePlanUI();
+                    updateCreditsDisplay();
+                    updateStatsDisplay();
+                    
+                    // Clear storage
+                    localStorage.removeItem('pendingPayment');
+                    localStorage.removeItem('paymentSessionId');
+                    
+                    // Show success
+                    showToast('✅ Your plan is now active!', 'success');
+                    createConfetti();
+                    
+                    // Clean URL and navigate
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    
+                    setTimeout(() => {
+                        navigateToPage('aiGenerator');
+                    }, 1500);
+                    
+                } else {
+                    throw new Error(data.error || 'Failed to activate plan');
+                }
+                
+            } catch (error) {
+                console.error('❌ Error activating plan:', error);
+                showToast('Error activating plan. Please contact support.', 'error');
+                
+                // Fallback: reload plan from database
+                setTimeout(async () => {
+                    await loadUserPlanFromDatabase();
+                    updatePlanUI();
+                    updateCreditsDisplay();
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }, 2000);
+            }
+        } else {
+            // No localStorage data - try loading from database
+            console.log('⚠️ No localStorage data, loading from database...');
+            setTimeout(async () => {
+                await loadUserPlanFromDatabase();
+                updatePlanUI();
+                updateCreditsDisplay();
+                showToast('✅ Your plan is now active!', 'success');
+                window.history.replaceState({}, document.title, window.location.pathname);
+                navigateToPage('aiGenerator');
+            }, 2000);
+        }
+        
     } else if (paymentStatus === 'cancelled') {
+        console.log('❌ Payment cancelled');
         showToast('Payment was cancelled', 'warning');
+        localStorage.removeItem('pendingPayment');
+        localStorage.removeItem('paymentSessionId');
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
 
+// ============================================
+// OPTIONAL: Verify payment via backend
+// ============================================
+async function verifyPaymentWithBackend(sessionId, userId) {
+    try {
+        const response = await fetch(`${API_URL}/api/dodo/verify-payment`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, userId })
+        });
+        
+        const data = await response.json();
+        return data;
+        
+    } catch (error) {
+        console.error('❌ Payment verification error:', error);
+        return { success: false, error: error.message };
+    }
+}
 // ============================================
 // PRICING PLAN FUNCTIONS
 // ============================================
