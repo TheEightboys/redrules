@@ -1,37 +1,65 @@
 // ============================================
-// PRODUCTION-READY DASHBOARD.JS
+// PRODUCTION-READY DASHBOARD.JS (FIXED)
 // ============================================
 
 // --- SUPABASE & API CONFIG ---
-// !! IMPORTANT: Replace with your actual Supabase URL and Anon Key !!
-const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co'; // e.g., 'https://duzaoqvdukdnbjzccwbp.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8 '; // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6Ikp...ZDyFK6UP8'
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// !! IMPORTANT: Replace with your deployed backend URL !!
-const API_URL = 'https://redditfix-backend.onrender.com'; // e.g., 'https://reddi-gen-api.onrender.com'
+const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8';
+const API_URL = 'https://redditfix-backend.onrender.com';
 
 // --- GLOBAL STATE ---
+let supabaseClient = null;
 let currentUser = null;
 let userProfile = null;
 let userPlan = null;
 let userHistory = [];
-let bootstrapModals = {}; // To store modal instances
+let bootstrapModals = {};
 let bootstrapToast = null;
+let isServerAwake = false; // <-- NEW: Track server state
 
-// --- PRICING DATA (Source of Truth) ---
+// --- PRICING DATA ---
 const PRICING_DATA = {
     starter: {
-        monthly: { price: 1.99, posts: 150 },
-        yearly: { price: 21.49, posts: 1800 } // Assuming 1.99*12 * 0.9
+        monthly: { 
+            price: 1.99, 
+            posts: 150,
+            productId: 'pdt_LBHf0mWr6mV54umDhx9cn',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_LBHf0mWr6mV54umDhx9cn'
+        },
+        yearly: { 
+            price: 21.49, 
+            posts: 1800,
+            productId: 'pdt_RBEfQWVlN9bnWihieBQSt',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_RBEfQWVlN9bnWihieBQSt'
+        }
     },
     professional: {
-        monthly: { price: 2.99, posts: 250 },
-        yearly: { price: 32.49, posts: 3000 } // Assuming 2.99*12 * 0.9
+        monthly: { 
+            price: 2.99, 
+            posts: 250,
+            productId: 'pdt_dumBrrIeNTtENukKXHiGh',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_dumBrrIeNTtENukKXHiGh'
+        },
+        yearly: { 
+            price: 32.49, 
+            posts: 3000,
+            productId: 'pdt_gBCE38rNQm8x30iqAltc6',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_gBCE38rNQm8x30iqAltc6'
+        }
     },
     enterprise: {
-        monthly: { price: 3.99, posts: 500 },
-        yearly: { price: 43.49, posts: 6000 } // Assuming 3.99*12 * 0.9
+        monthly: { 
+            price: 3.99, 
+            posts: 500,
+            productId: 'pdt_UHLjlc1qPLgSvK1ubHjgJ',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_UHLjlc1qPLgSvK1ubHjgJ'
+        },
+        yearly: { 
+            price: 43.49, 
+            posts: 6000,
+            productId: 'pdt_E9rxQwDMZahet7kADcna5',
+            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_E9rxQwDMZahet7kADcna5'
+        }
     }
 };
 
@@ -40,57 +68,124 @@ const PRICING_DATA = {
 // ============================================
 document.addEventListener('DOMContentLoaded', async () => {
     console.log('✅ Dashboard initializing...');
+    
+    try {
+        if (!window.supabase) throw new Error('Supabase library not loaded.');
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        if (!window.bootstrap) throw new Error('Bootstrap library not loaded.');
+        initBootstrapComponents();
+        
+        await handlePaymentCallback();
+        
+        // --- MODIFIED onAuthStateChange ---
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
+            console.log('🔄 Auth state changed:', event);
+            
+            if (event === 'SIGNED_IN' && session) {
+                currentUser = session.user;
+                hideAuthModal();
+                hideLoadingScreen();
+                
+                await wakeUpServer(); // <-- ADDED PING
+                await loadUserData(); 
+                showToast('Welcome back!', 'success');
 
-    // Initialize Bootstrap components
-    initBootstrapComponents();
+            } else if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                userProfile = null;
+                userPlan = null;
+                userHistory = [];
+                isServerAwake = false; // Reset on sign out
+                showAuthModal();
+                hideLoadingScreen();
+            }
+        });
+        
+        await checkAuthState();
+        initializeEventListeners();
+        updatePricingDisplay();
 
-    // Check for payment callback
-    await handlePaymentCallback();
-
-    // Check auth state
-    await checkAuthState();
-
-    // Initialize event listeners
-    initializeEventListeners();
-
-    // Set initial pricing display
-    updatePricingDisplay();
+    } catch (error) {
+        console.error('❌ FATAL: Dashboard initialization failed:', error);
+        const loadingScreen = document.getElementById('loadingScreen');
+        if (loadingScreen) {
+            loadingScreen.innerHTML = `
+                <div class="text-danger p-5 text-center" style="max-width: 600px; margin: auto;">
+                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                    <h5 class="fw-bold">Application Failed to Load</h5>
+                    <p class="text-muted">An error occurred during initialization. Please check your internet connection and make sure browser extensions (like adblockers) are not blocking essential scripts.</p>
+                    <code class="text-dark d-block bg-light p-2 rounded small">${error.message}</code>
+                </div>`;
+        }
+    }
 });
 
 function initBootstrapComponents() {
-    // Modals
     const modalIds = ['authModal', 'viewPostModal', 'changePasswordModal', 'deleteAccountModal'];
     modalIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) bootstrapModals[id] = new bootstrap.Modal(el);
     });
 
-    // Toast
     const toastEl = document.getElementById('notificationToast');
     if (toastEl) bootstrapToast = new bootstrap.Toast(toastEl, { delay: 4000 });
 }
 
+// --- NEW FUNCTION ---
+async function wakeUpServer() {
+    if (isServerAwake) return; // Don't ping if already awake
+
+    console.log('Pinging server to wake it up...');
+    showToast('Waking up server... this can take up to 60s.', 'info');
+    try {
+        const startTime = Date.now();
+        // Ping the root '/' endpoint which is fast
+        const response = await fetch(API_URL, { method: 'GET' }); 
+        if (!response.ok) throw new Error(`Server ping returned status ${response.status}`);
+        
+        const duration = (Date.now() - startTime) / 1000;
+        console.log(`✅ Server is awake. (Took ${duration.toFixed(2)}s)`);
+        showToast('Server is awake! Loading your data.', 'success');
+        isServerAwake = true;
+    } catch (error) {
+        console.error('❌ Server ping failed:', error);
+        showToast('Could not connect to the server.', 'error');
+        isServerAwake = false; // Allow retry
+    }
+}
+
+// --- MODIFIED checkAuthState ---
 async function checkAuthState() {
+    let sessionFound = false;
     try {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         
         if (error) throw error;
 
-        if (session) {
+        if (session && session.user) {
             console.log('✅ User authenticated:', session.user.email);
             currentUser = session.user;
-            await loadUserData(); // Load user data
             hideAuthModal();
-            hideLoadingScreen();
+            sessionFound = true;
         } else {
             console.log('⚠️ No active session');
             showAuthModal();
-            hideLoadingScreen();
         }
     } catch (error) {
         console.error('❌ Auth state check error:', error);
         showToast('Error checking authentication', 'error');
+        showAuthModal();
+    } finally {
         hideLoadingScreen();
+        
+        if (sessionFound) {
+            console.log('Spinner hidden. Waking up server...');
+            await wakeUpServer(); // <-- ADDED PING
+            console.log('Now loading user data...');
+            await loadUserData(); // This should be fast now
+            console.log('User data load attempt finished.');
+        }
     }
 }
 
@@ -98,87 +193,114 @@ async function checkAuthState() {
 // DATA FETCHING & UI UPDATES
 // ============================================
 
-/**
- * Fetches all user data (profile, plan, history) from the backend
- */
+function showDataLoadingPlaceholders() {
+    console.log('Displaying loading placeholders...');
+    const loadingText = '...';
+    const longLoadingText = 'Loading...';
+
+    setText('creditsLeft', loadingText);
+    setText('dropdownUserName', longLoadingText);
+    setText('dropdownUserEmail', loadingText);
+    setText('dropdownCreditsUsed', '... / ...');
+    setStyle('creditsProgress', 'width', `100%`);
+    setText('dropdownTotalPosts', loadingText);
+    setText('dropdownJoinDate', loadingText);
+    setText('profileName', longLoadingText);
+    setText('profileEmail', loadingText);
+    setText('totalPosts', loadingText);
+    setText('creditsUsed', loadingText);
+    setText('memberSince', loadingText);
+    setValue('settingsEmail', longLoadingText);
+    setValue('settingsDisplayName', '');
+    setValue('settingsBio', '');
+    setText('settingsCreditsDisplay', loadingText);
+    setText('settingsCreditsSubtext', 'Loading credit info...');
+    setStyle('settingsProgressDisplay', 'width', '100%');
+}
+
+function showDataErrorState(errorMessage) {
+    console.error('Displaying error state...');
+    const errorText = 'Error';
+    setText('creditsLeft', '!');
+    setText('dropdownUserName', errorText);
+    setText('dropdownUserEmail', 'Could not load data');
+    setText('profileName', errorText);
+    setText('profileEmail', 'Could not load data');
+    setValue('settingsEmail', 'Error loading email');
+    setText('settingsCreditsDisplay', '!');
+    setText('settingsCreditsSubtext', 'Error loading credits');
+    showToast(errorMessage, 'error');
+}
+
 async function loadUserData() {
     if (!currentUser) return;
+    
+    console.log('Attempting to load user data...');
+    showDataLoadingPlaceholders(); 
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('No session found');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/user/data`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (!response.ok) {
-            throw new Error('Failed to fetch user data');
+            throw new Error(`Failed to fetch user data (Status: ${response.status})`);
         }
 
         const data = await response.json();
         
         if (data.success) {
+            console.log('Successfully fetched user data.');
             userProfile = data.profile;
             userPlan = data.plan;
-            userHistory = data.history;
-            
-            // Update all parts of the UI
-            updateUI();
+            userHistory = data.history || [];
+            updateUI(); 
         } else {
             throw new Error(data.error || 'Could not load data');
         }
 
     } catch (error) {
         console.error('❌ Error loading user data:', error);
-        showToast(error.message, 'error');
-        if (error.message.includes('Authentication')) await handleSignOut(); // Force sign out
+        showDataErrorState(error.message); 
     }
 }
 
-/**
- * Main function to update all dynamic UI elements
- */
 function updateUI() {
     if (!userProfile || !userPlan) return;
+    console.log('Updating UI with real data...');
 
-    const credits = userPlan.credits_remaining;
-    const maxCredits = userPlan.posts_per_month;
+    const credits = userPlan.credits_remaining || 0;
+    const maxCredits = userPlan.posts_per_month || 0;
     const creditsUsed = maxCredits - credits;
     const progressPercent = maxCredits > 0 ? (creditsUsed / maxCredits) * 100 : 0;
     const joinDate = new Date(userProfile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 
-    // Sidebar
     setText('creditsLeft', credits);
-
-    // User Dropdown
     setText('dropdownUserName', userProfile.display_name || userProfile.email);
     setText('dropdownUserEmail', userProfile.email);
     setText('dropdownCreditsUsed', `${creditsUsed} / ${maxCredits}`);
     setStyle('creditsProgress', 'width', `${progressPercent}%`);
     setText('dropdownTotalPosts', userHistory.length);
     setText('dropdownJoinDate', joinDate);
-
-    // Profile Page
     setText('profileName', userProfile.display_name || userProfile.email);
     setText('profileEmail', userProfile.email);
     setText('totalPosts', userHistory.length);
     setText('creditsUsed', creditsUsed);
-    setText('memberSince', joinDate.split(' ')[1]); // Just the year
-
-    // Settings Page
+    setText('memberSince', joinDate.split(' ')[1]);
     setValue('settingsEmail', userProfile.email);
-    setValue('settingsDisplayName', userProfile.display_name);
-    setValue('settingsBio', userProfile.bio);
+    setValue('settingsDisplayName', userProfile.display_name || '');
+    setValue('settingsBio', userProfile.bio || '');
     setText('settingsCreditsDisplay', credits);
     setText('settingsCreditsSubtext', `${credits} / ${maxCredits} credits remaining`);
     setStyle('settingsProgressDisplay', 'width', `${progressPercent}%`);
 
-    // History Page
     displayHistory();
 }
 
-/**
- * Renders the post history table
- */
 function displayHistory() {
     const tableBody = document.getElementById('historyTableBody');
     if (!tableBody) return;
@@ -209,8 +331,7 @@ function displayHistory() {
                 <td>${type}</td>
                 <td>${preview}</td>
                 <td>
-                    <button class="btn btn-sm btn-outline-info" 
-                            data-post-id="${post.id}">
+                    <button class="btn btn-sm btn-outline-info" data-post-id="${post.id}">
                         <i class="fas fa-eye me-1"></i>View
                     </button>
                 </td>
@@ -218,7 +339,6 @@ function displayHistory() {
         `;
     }).join('');
 
-    // Add event listeners to new "View" buttons
     tableBody.querySelectorAll('[data-post-id]').forEach(button => {
         button.addEventListener('click', () => {
             const postId = button.dataset.postId;
@@ -234,23 +354,29 @@ function displayHistory() {
 
 async function handleLogin(e) {
     e.preventDefault();
-    const email = getValue('loginEmail');
+    const email = getValue('loginEmail').trim();
     const password = getValue('loginPassword');
-    if (!email || !password) return showToast('Please enter email and password', 'warning');
+    
+    if (!email || !password) {
+        return showToast('Please enter email and password', 'warning');
+    }
     
     setButtonLoading('loginButton', true, 'Signing In...');
 
     try {
-        const { data: { session }, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ 
+            email, 
+            password 
+        });
         
-        currentUser = session.user;
-        await loadUserData();
-        hideAuthModal();
-        showToast('Welcome back!', 'success');
+        if (error) throw error;
+        if (!data.session) throw new Error('Login failed - no session created');
+        
+        // onAuthStateChange will handle the rest
+        
     } catch (error) {
         console.error('❌ Login error:', error);
-        showToast(error.message, 'error');
+        showToast(error.message || 'Login failed', 'error');
     } finally {
         setButtonLoading('loginButton', false, '<i class="fas fa-sign-in-alt me-2"></i>Sign In');
     }
@@ -258,29 +384,44 @@ async function handleLogin(e) {
 
 async function handleSignup(e) {
     e.preventDefault();
-    const email = getValue('signupEmail');
+    const email = getValue('signupEmail').trim();
     const password = getValue('signupPassword');
     const confirm = getValue('signupPasswordConfirm');
 
-    if (!email || !password || !confirm) return showToast('Please fill all fields', 'warning');
-    if (password.length < 8) return showToast('Password must be at least 8 characters', 'warning');
-    if (password !== confirm) return showToast('Passwords do not match!', 'error');
+    if (!email || !password || !confirm) {
+        return showToast('Please fill all fields', 'warning');
+    }
+    if (password.length < 8) {
+        return showToast('Password must be at least 8 characters', 'warning');
+    }
+    if (password !== confirm) {
+        return showToast('Passwords do not match!', 'error');
+    }
 
     setButtonLoading('signupButton', true, 'Creating Account...');
 
     try {
-        const { error } = await supabaseClient.auth.signUp({ 
+        const { data, error } = await supabaseClient.auth.signUp({ 
             email, 
             password,
-            options: { emailRedirectTo: window.location.origin }
+            options: { 
+                emailRedirectTo: `${window.location.origin}/dashboard.html`,
+                data: { email_confirmed: false }
+            }
         });
+        
         if (error) throw error;
 
-        showToast('Account created! Please check your email to verify.', 'success');
-        showLoginSection(); // Switch to login view
+        if (data.user) {
+            showToast('Account created! Please check your email to verify.', 'success');
+            setValue('signupEmail', '');
+            setValue('signupPassword', '');
+            setValue('signupPasswordConfirm', '');
+            setTimeout(showLoginSection, 2000);
+        }
     } catch (error) {
         console.error('❌ Signup error:', error);
-        showToast(error.message, 'error');
+        showToast(error.message || 'Signup failed', 'error');
     } finally {
         setButtonLoading('signupButton', false, '<i class="fas fa-user-plus me-2"></i>Create Account');
     }
@@ -288,30 +429,33 @@ async function handleSignup(e) {
 
 async function handleGoogleSignIn() {
     try {
-        const { error } = await supabaseClient.auth.signInWithOAuth({
+        const { data, error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
-            options: { redirectTo: window.location.origin }
+            options: { 
+                redirectTo: `${window.location.origin}/dashboard.html`,
+                queryParams: {
+                    access_type: 'offline',
+                    prompt: 'consent'
+                }
+            }
         });
+        
         if (error) throw error;
+        console.log('🔄 Redirecting to Google...');
+        
     } catch (error) {
         console.error('❌ Google sign-in error:', error);
-        showToast(error.message, 'error');
+        showToast(error.message || 'Google sign-in failed', 'error');
     }
 }
 
 async function handleSignOut() {
     try {
         await supabaseClient.auth.signOut();
-        currentUser = null;
-        userProfile = null;
-        userPlan = null;
-        userHistory = [];
-        updateUI(); // Clear UI
-        showAuthModal();
-        showToast('Signed out successfully', 'success');
+        // onAuthStateChange will handle the rest
     } catch (error) {
         console.error('❌ Sign out error:', error);
-        showToast(error.message, 'error');
+        showToast(error.message || 'Sign out failed', 'error');
     }
 }
 
@@ -320,17 +464,18 @@ async function handleSignOut() {
 // ============================================
 
 async function handleFetchRules(type) {
+    await wakeUpServer(); // Ensure server is awake before API calls
     const isAI = type === 'ai';
     const inputId = isAI ? 'aiSubredditInput' : 'optimizerSubredditInput';
     const buttonId = isAI ? 'aiFetchGuidelinesBtn' : 'optimizerFetchGuidelinesBtn';
     const containerId = isAI ? 'aiGuidelinesContainer' : 'optimizerGuidelinesContainer';
-    const contentId = isAI ? 'aiGuidelinesContent' : 'aiGuidelineSubreddit';
+    const contentId = isAI ? 'aiGuidelinesContent' : 'optimizerGuidelinesContent';
     const subredditId = isAI ? 'aiGuidelineSubreddit' : 'optimizerGuidelineSubreddit';
     
-    const subreddit = getValue(inputId);
+    const subreddit = getValue(inputId).trim();
     if (!subreddit) return showToast('Please enter a subreddit name', 'warning');
 
-    setButtonLoading(buttonId, true, ''); // Spinner only
+    setButtonLoading(buttonId, true, '');
     
     try {
         const response = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
@@ -341,12 +486,10 @@ async function handleFetchRules(type) {
         }
 
         setText(subredditId, data.subreddit);
-        // Use innerHTML to render bold tags from the server's rulesText
-        document.getElementById(isAI ? 'aiGuidelinesContent' : 'optimizerGuidelinesContent').innerHTML = data.rules.replace(/\n/g, '<br>');
+        document.getElementById(contentId).innerHTML = data.rules.replace(/\n/g, '<br>');
         show(containerId);
         
         if (!isAI) {
-            // Enable optimizer button
             document.getElementById('optimizerOptimizeBtn').disabled = false;
             setText('optimizerButtonHelp', 'Ready to optimize!');
         }
@@ -354,7 +497,6 @@ async function handleFetchRules(type) {
     } catch (error) {
         console.error('❌ Rules fetch error:', error);
         showToast(error.message, 'error');
-        hide(containerId);
     } finally {
         const icon = '<i class="fas fa-search me-1"></i>Fetch Rules';
         setButtonLoading(buttonId, false, icon);
@@ -362,23 +504,29 @@ async function handleFetchRules(type) {
 }
 
 async function handleAIGenerate(isRegen = false) {
-    if (userPlan.credits_remaining <= 0) {
+    if (!userPlan || userPlan.credits_remaining <= 0) {
         showToast('No credits remaining. Please upgrade.', 'error');
         return navigateToPage('pricing');
     }
     
-    const subreddit = getValue('aiSubredditInput');
-    const topic = getValue('aiTopicInput');
+    await wakeUpServer(); // Ensure server is awake
+    const subreddit = getValue('aiSubredditInput').trim();
+    const topic = getValue('aiTopicInput').trim();
     const style = getValue('aiStyleSelect');
     const rules = getText('aiGuidelinesContent');
 
-    if (!subreddit || !topic) return showToast('Please enter a subreddit and topic', 'warning');
+    if (!subreddit || !topic) {
+        return showToast('Please enter a subreddit and topic', 'warning');
+    }
 
     setButtonLoading('aiGenerateBtn', true, 'Generating...');
     if (isRegen) setButtonLoading('aiRegenerateBtn', true, '');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/generate-post`, {
             method: 'POST',
             headers: { 
@@ -391,16 +539,14 @@ async function handleAIGenerate(isRegen = false) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Generation failed');
 
-        // Display results
         setValue('aiGeneratedTitle', data.post.title);
         setValue('aiGeneratedContent', data.post.content);
         setText('aiTargetSubreddit', subreddit);
         show('aiOutputCard');
         
-        // Update state
         userPlan.credits_remaining = data.creditsRemaining;
         userHistory.unshift(data.historyItem);
-        updateUI(); // Refresh credits and history count
+        updateUI();
         
         showToast('Content generated successfully!', 'success');
 
@@ -414,23 +560,29 @@ async function handleAIGenerate(isRegen = false) {
 }
 
 async function handleOptimize(isRegen = false) {
-    if (userPlan.credits_remaining <= 0) {
+    if (!userPlan || userPlan.credits_remaining <= 0) {
         showToast('No credits remaining. Please upgrade.', 'error');
         return navigateToPage('pricing');
     }
 
-    const subreddit = getValue('optimizerSubredditInput');
-    const content = getValue('optimizerContentInput');
+    await wakeUpServer(); // Ensure server is awake
+    const subreddit = getValue('optimizerSubredditInput').trim();
+    const content = getValue('optimizerContentInput').trim();
     const style = getValue('optimizationStyleSelect');
     const rules = getText('optimizerGuidelinesContent');
 
-    if (!subreddit || !content) return showToast('Please enter a subreddit and content', 'warning');
+    if (!subreddit || !content) {
+        return showToast('Please enter a subreddit and content', 'warning');
+    }
 
     setButtonLoading('optimizerOptimizeBtn', true, 'Optimizing...');
     if (isRegen) setButtonLoading('optimizerRegenerateBtn', true, '');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/optimize-post`, {
             method: 'POST',
             headers: { 
@@ -443,15 +595,13 @@ async function handleOptimize(isRegen = false) {
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'Optimization failed');
 
-        // Display results
         setValue('optimizerOptimizedText', data.optimizedPost);
         setText('optimizerTargetSubreddit', subreddit);
         show('optimizerOutputCard');
         
-        // Update state
         userPlan.credits_remaining = data.creditsRemaining;
         userHistory.unshift(data.historyItem);
-        updateUI(); // Refresh credits and history count
+        updateUI();
         
         showToast('Content optimized successfully!', 'success');
 
@@ -469,63 +619,74 @@ async function handleOptimize(isRegen = false) {
 // ============================================
 
 async function initiateDodoPayment(planType) {
-    if (!currentUser) return showAuthModal();
+    if (!currentUser) {
+        showToast('Please sign in to upgrade', 'warning');
+        return showAuthModal();
+    }
     
     const billingCycle = document.querySelector('input[name="billingCycle"]:checked').value;
     const planData = PRICING_DATA[planType][billingCycle];
     
-    const paymentData = {
-        plan: planType,
-        postsPerMonth: planData.posts,
-        billingCycle: billingCycle,
-        amount: planData.price,
-        transactionId: `TXN_${Date.now()}_${currentUser.id.substring(0, 8)}`
-    };
-
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
-        const response = await fetch(`${API_URL}/api/dodo/create-session`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(paymentData)
-        });
-
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error || 'Failed to create payment session');
-
-        showToast('Redirecting to payment...', 'info');
+        const pendingPayment = {
+            userId: currentUser.id,
+            email: currentUser.email,
+            plan: planType,
+            billingCycle: billingCycle,
+            postsPerMonth: planData.posts,
+            amount: planData.price,
+            timestamp: Date.now()
+        };
         
-        // Redirect to Dodo's checkout URL
-        window.location.href = data.paymentUrl;
+        localStorage.setItem('pending_payment', JSON.stringify(pendingPayment));
+        showToast('Redirecting to payment...', 'info');
+        const checkoutUrl = `${planData.checkoutUrl}?quantity=1`;
+        window.location.href = checkoutUrl;
 
     } catch (error) {
-        console.error('❌ Dodo init error:', error);
-        showToast(error.message, 'error');
+        console.error('❌ Payment init error:', error);
+        showToast(error.message || 'Failed to initiate payment', 'error');
     }
 }
 
 async function handlePaymentCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentStatus = urlParams.get('payment');
+    const sessionId = urlParams.get('session_id');
 
     if (paymentStatus === 'success') {
         showToast('Payment successful! 🎉 Activating your plan...', 'success');
-        // The webhook handles activation. We just need to reload data.
-        // We add a small delay to give the webhook time to process.
-        setTimeout(() => {
-            loadUserData();
-            navigateToPage('aiGenerator'); // Go to a useful page
-        }, 3000); // 3-second delay
         
-        // Clean the URL
+        const pendingPayment = localStorage.getItem('pending_payment');
+        if (pendingPayment) {
+            try {
+                const paymentData = JSON.parse(pendingPayment);
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                
+                if (session) {
+                    await wakeUpServer(); // Wake server before verifying
+                    await fetch(`${API_URL}/api/payment/verify`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`
+                        },
+                        body: JSON.stringify({ ...paymentData, sessionId: sessionId })
+                    });
+                }
+                localStorage.removeItem('pending_payment');
+            } catch (error) {
+                console.error('Error processing payment callback:', error);
+            }
+        }
+        
+        setTimeout(() => navigateToPage('aiGenerator'), 2000); // Reloading data happens on auth change
         window.history.replaceState({}, document.title, window.location.pathname);
         
     } else if (paymentStatus === 'cancelled') {
         showToast('Payment was cancelled.', 'warning');
-        navigateToPage('pricing'); // Go back to pricing
+        localStorage.removeItem('pending_payment');
+        navigateToPage('pricing');
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
@@ -546,13 +707,17 @@ function updatePricingDisplay() {
 // ============================================
 
 async function handleSaveProfile() {
-    const displayName = getValue('settingsDisplayName');
-    const bio = getValue('settingsBio');
+    await wakeUpServer(); // Ensure server is awake
+    const displayName = getValue('settingsDisplayName').trim();
+    const bio = getValue('settingsBio').trim();
 
     setButtonLoading('saveProfileBtn', true, 'Saving...');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/user/profile`, {
             method: 'PUT',
             headers: {
@@ -565,8 +730,8 @@ async function handleSaveProfile() {
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
-        userProfile = data.profile; // Update local state
-        updateUI(); // Refresh UI
+        userProfile = data.profile;
+        updateUI();
         showToast('Profile saved successfully!', 'success');
 
     } catch (error) {
@@ -578,6 +743,7 @@ async function handleSaveProfile() {
 }
 
 async function handleChangePassword() {
+    await wakeUpServer(); // Ensure server is awake
     const newPassword = getValue('newPassword');
     const confirm = getValue('confirmPassword');
 
@@ -588,7 +754,10 @@ async function handleChangePassword() {
     setButtonLoading('changePasswordBtn', true, 'Updating...');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/change-password`, {
             method: 'POST',
             headers: {
@@ -616,11 +785,15 @@ async function handleChangePassword() {
 
 async function handleLogoutAll() {
     if (!confirm('Are you sure you want to sign out from all devices?')) return;
-
+    
+    await wakeUpServer(); // Ensure server is awake
     setButtonLoading('logoutAllBtn', true, 'Logging out...');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/logout-all`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}` }
@@ -629,7 +802,6 @@ async function handleLogoutAll() {
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
-        // This action logs out the current session too
         await handleSignOut();
         showToast('Signed out from all devices.', 'success');
 
@@ -645,10 +817,14 @@ async function handleDeleteAccount() {
     const password = getValue('deleteConfirmPassword');
     if (!password) return showToast('Please enter your password to confirm', 'warning');
 
+    await wakeUpServer(); // Ensure server is awake
     setButtonLoading('deleteAccountBtn', true, 'Deleting...');
 
     try {
-        const token = (await supabaseClient.auth.getSession()).data.session.access_token;
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
+        
+        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/delete-account`, {
             method: 'POST',
             headers: {
@@ -662,7 +838,7 @@ async function handleDeleteAccount() {
         if (!data.success) throw new Error(data.error);
 
         bootstrapModals.deleteAccountModal.hide();
-        await handleSignOut(); // Sign out locally
+        await handleSignOut();
         showToast('Account deleted successfully.', 'success');
 
     } catch (error) {
@@ -673,23 +849,18 @@ async function handleDeleteAccount() {
     }
 }
 
-
 // ============================================
 // EVENT LISTENERS
 // ============================================
 function initializeEventListeners() {
-    // Auth
     document.getElementById('loginForm')?.addEventListener('submit', handleLogin);
     document.getElementById('signupForm')?.addEventListener('submit', handleSignup);
     document.getElementById('googleSignInBtn')?.addEventListener('click', handleGoogleSignIn);
     document.getElementById('signOutBtn')?.addEventListener('click', handleSignOut);
     document.getElementById('dropdownSignOutBtn')?.addEventListener('click', handleSignOut);
-    
-    // Auth UI switching
     document.getElementById('showSignupLink')?.addEventListener('click', (e) => { e.preventDefault(); showSignupSection(); });
     document.getElementById('showLoginLink')?.addEventListener('click', (e) => { e.preventDefault(); showLoginSection(); });
 
-    // Navigation
     document.querySelectorAll('.sidebar-item').forEach(item => {
         item.addEventListener('click', (e) => {
             e.preventDefault();
@@ -706,7 +877,6 @@ function initializeEventListeners() {
         document.getElementById('sidebar').classList.toggle('active');
     });
 
-    // AI Generator
     document.getElementById('aiFetchGuidelinesBtn')?.addEventListener('click', () => handleFetchRules('ai'));
     document.getElementById('aiGenerateBtn')?.addEventListener('click', () => handleAIGenerate(false));
     document.getElementById('aiRegenerateBtn')?.addEventListener('click', () => handleAIGenerate(true));
@@ -715,7 +885,6 @@ function initializeEventListeners() {
         copyToClipboard(text, 'Full post copied to clipboard!');
     });
 
-    // Content Optimizer
     document.getElementById('optimizerFetchGuidelinesBtn')?.addEventListener('click', () => handleFetchRules('optimizer'));
     document.getElementById('optimizerOptimizeBtn')?.addEventListener('click', () => handleOptimize(false));
     document.getElementById('optimizerRegenerateBtn')?.addEventListener('click', () => handleOptimize(true));
@@ -723,17 +892,12 @@ function initializeEventListeners() {
         copyToClipboard(getValue('optimizerOptimizedText'), 'Optimized content copied!');
     });
 
-    // Pricing
     document.getElementById('monthlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('yearlyBilling')?.addEventListener('change', updatePricingDisplay);
-
-    // Settings
     document.getElementById('saveProfileBtn')?.addEventListener('click', handleSaveProfile);
     document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword);
     document.getElementById('logoutAllBtn')?.addEventListener('click', handleLogoutAll);
     document.getElementById('deleteAccountBtn')?.addEventListener('click', handleDeleteAccount);
-    
-    // History Modal
     document.getElementById('viewPostCopyBtn')?.addEventListener('click', () => {
         copyToClipboard(getValue('viewPostContent'), 'Post content copied!');
     });
@@ -765,8 +929,6 @@ function navigateToPage(pageName) {
         pricing: 'Pricing Plans'
     };
     setText('pageTitle', titles[pageName] || 'Dashboard');
-    
-    // Close sidebar on mobile after navigation
     document.getElementById('sidebar').classList.remove('active');
 }
 
@@ -774,18 +936,32 @@ function showViewPostModal(post) {
     setValue('viewPostSubreddit', `r/${post.subreddit}`);
     setValue('viewPostContentTitle', post.title || '');
     setValue('viewPostContent', post.content);
-    bootstrapModals.viewPostModal.show();
+    if (bootstrapModals.viewPostModal) bootstrapModals.viewPostModal.show();
 }
 
-function showAuthModal() { show('authModal', 'modal'); }
-function hideAuthModal() { hide('authModal', 'modal'); }
-function showLoadingScreen() { show('loadingScreen', 'flex'); }
-function hideLoadingScreen() { hide('loadingScreen'); }
+function showAuthModal() { 
+    if (bootstrapModals.authModal) bootstrapModals.authModal.show();
+}
+
+function hideAuthModal() { 
+    if (bootstrapModals.authModal) bootstrapModals.authModal.hide();
+}
+
+function showLoadingScreen() { 
+    const el = document.getElementById('loadingScreen');
+    if (el) el.style.display = 'flex';
+}
+
+function hideLoadingScreen() { 
+    const el = document.getElementById('loadingScreen');
+    if (el) el.style.display = 'none';
+}
 
 function showLoginSection() {
     hide('signupSection');
     show('emailAuthSection');
 }
+
 function showSignupSection() {
     hide('emailAuthSection');
     show('signupSection');
@@ -797,18 +973,12 @@ function showSignupSection() {
 
 function show(id, displayType = 'block') {
     const el = document.getElementById(id);
-    if (el) {
-        if (displayType === 'modal') bootstrapModals[id]?.show();
-        else el.style.display = displayType;
-    }
+    if (el) el.style.display = displayType;
 }
 
-function hide(id, displayType = 'none') {
+function hide(id) {
     const el = document.getElementById(id);
-    if (el) {
-        if (displayType === 'modal') bootstrapModals[id]?.hide();
-        else el.style.display = 'none';
-    }
+    if (el) el.style.display = 'none';
 }
 
 function setText(id, text) {
@@ -847,7 +1017,7 @@ function setButtonLoading(id, isLoading, loadingText = '') {
             ${loadingText}
         `;
     } else {
-        btn.innerHTML = loadingText; // loadingText is the original HTML
+        btn.innerHTML = loadingText;
     }
 }
 
@@ -856,7 +1026,11 @@ function showToast(message, type = 'info') {
     const titleEl = document.getElementById('toastTitle');
     const messageEl = document.getElementById('toastMessage');
 
-    // Reset classes
+    if (!toastEl || !titleEl || !messageEl || !bootstrapToast) {
+        console.warn('Toast elements not found');
+        return;
+    }
+
     toastEl.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'bg-info', 'text-white');
     
     const types = {
@@ -872,7 +1046,9 @@ function showToast(message, type = 'info') {
     messageEl.textContent = message;
     toastEl.classList.add(config.bg, 'text-white');
 
-    bootstrapToast.show();
+    if (bootstrapToast) {
+        bootstrapToast.show();
+    }
 }
 
 function copyToClipboard(text, successMessage) {
@@ -885,7 +1061,7 @@ function copyToClipboard(text, successMessage) {
 }
 
 // ============================================
-// GLOBAL WINDOW EXPORTS (for inline HTML onclick)
+// GLOBAL WINDOW EXPORTS
 // ============================================
 window.navigateToPage = navigateToPage;
 window.initiateDodoPayment = initiateDodoPayment;
