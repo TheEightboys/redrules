@@ -108,14 +108,31 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ============================================
 // LOAD USER PLAN FROM DATABASE
 // ============================================
+// ============================================
+// LOAD USER PLAN FROM DATABASE - FIXED
+// ============================================
 async function loadUserPlanFromDatabase() {
-    if (!currentUser) return;
+    if (!currentUser) {
+        console.log('⚠️ No current user');
+        return;
+    }
     
     try {
         console.log('📊 Loading plan from database for:', currentUser.id);
         
         const response = await fetch(`${API_URL}/api/user/plan/${currentUser.id}`);
+        
+        // Check if response is OK
+        if (!response.ok) {
+            console.error('❌ API returned error:', response.status);
+            const errorText = await response.text();
+            console.error('Error details:', errorText);
+            resetPlanToFree();
+            return;
+        }
+        
         const data = await response.json();
+        console.log('📦 Received data:', data);
         
         if (data.success && data.hasPlan) {
             userPlan = data.plan;
@@ -131,10 +148,77 @@ async function loadUserPlanFromDatabase() {
         
     } catch (error) {
         console.error('❌ Error loading plan from database:', error);
+        console.error('Error stack:', error.stack);
         resetPlanToFree();
     }
 }
 
+// ============================================
+// SAVE PENDING PAYMENT - FIXED
+// ============================================
+app.post('/api/user/plan/pending', async (req, res) => {
+    try {
+        const { userId, planType, postsPerMonth, billingCycle, amount, transactionId, customerEmail } = req.body;
+        
+        console.log('💾 Saving pending payment:', { userId, planType, amount });
+        
+        const { data, error } = await supabase
+            .from('payments')
+            .insert([{
+                user_id: userId,
+                transaction_id: transactionId,
+                plan_type: planType,
+                posts_per_month: postsPerMonth,
+                billing_cycle: billingCycle,
+                amount: amount,
+                status: 'pending',
+                customer_email: customerEmail,
+                created_at: new Date().toISOString()
+            }]);
+
+        if (error) {
+            console.error('❌ Supabase error:', error);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to save pending payment' 
+            });
+        }
+
+        console.log('✅ Pending payment saved');
+        
+        res.json({ success: true });
+
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// ============================================
+// TEST YOUR API ENDPOINT
+// ============================================
+// Run this in browser console to test:
+/*
+fetch('http://localhost:3000/api/user/plan/YOUR_USER_ID')
+  .then(r => r.json())
+  .then(d => console.log('Plan data:', d))
+  .catch(e => console.error('Error:', e));
+*/
+
+
+// ============================================
+// TEST YOUR API ENDPOINT
+// ============================================
+// Run this in browser console to test:
+/*
+fetch('http://localhost:3000/api/user/plan/YOUR_USER_ID')
+  .then(r => r.json())
+  .then(d => console.log('Plan data:', d))
+  .catch(e => console.error('Error:', e));
+*/
 // ============================================
 // SAVE PLAN TO DATABASE
 // ============================================

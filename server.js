@@ -719,7 +719,223 @@ app.get('/api/user/payments/:userId', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// ==========================================
+// USER PLAN MANAGEMENT
+// ==========================================
 
+// Get user's current plan
+app.get('/api/user/plan/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        console.log('📊 Fetching plan for user:', userId);
+        
+        const { data: plan, error } = await supabase
+            .from('user_plans')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+        if (error && error.code !== 'PGRST116') {
+            console.error('❌ Error fetching plan:', error);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to fetch plan' 
+            });
+        }
+
+        // Check if plan exists and is not expired
+        if (!plan) {
+            return res.json({
+                success: true,
+                hasPlan: false,
+                plan: {
+                    name: 'Free',
+                    tier: 'free',
+                    credits: 10,
+                    postsPerMonth: 10,
+                    activated: false
+                }
+            });
+        }
+
+        const expiresAt = new Date(plan.expires_at);
+        const isExpired = expiresAt < new Date();
+
+        if (isExpired) {
+            // Mark plan as expired
+            await supabase
+                .from('user_plans')
+                .update({ status: 'expired' })
+                .eq('user_id', userId);
+
+            return res.json({
+                success: true,
+                hasPlan: false,
+                isExpired: true,
+                plan: {
+                    name: 'Free',
+                    tier: 'free',
+                    credits: 10,
+                    postsPerMonth: 10,
+                    activated: false
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            hasPlan: true,
+            plan: {
+                name: plan.plan_type.charAt(0).toUpperCase() + plan.plan_type.slice(1),
+                tier: plan.plan_type,
+                credits: plan.credits_remaining,
+                postsPerMonth: plan.posts_per_month,
+                billingCycle: plan.billing_cycle,
+                amount: plan.amount,
+                activated: true,
+                activatedDate: plan.activated_at,
+                expiryDate: plan.expires_at,
+                status: plan.status
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Save/Update user plan (called after payment)
+app.post('/api/user/plan', async (req, res) => {
+    try {
+        const { userId, planType, postsPerMonth, credits, billingCycle, amount } = req.body;
+        
+        console.log('💾 Saving plan for user:', userId);
+        
+        if (!userId || !planType || !postsPerMonth || !credits) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required fields' 
+            });
+        }
+
+        const expiryDate = new Date();
+        if (billingCycle === 'yearly') {
+            expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        } else {
+            expiryDate.setMonth(expiryDate.getMonth() + 1);
+        }
+
+        const { data, error } = await supabase
+            .from('user_plans')
+            .upsert({
+                user_id: userId,
+                plan_type: planType,
+                posts_per_month: postsPerMonth,
+                credits_remaining: credits,
+                billing_cycle: billingCycle,
+                amount: amount,
+                status: 'active',
+                activated_at: new Date().toISOString(),
+                expires_at: expiryDate.toISOString(),
+                updated_at: new Date().toISOString()
+            }, { 
+                onConflict: 'user_id',
+                returning: 'minimal'
+            });
+
+        if (error) {
+            console.error('❌ Error saving plan:', error);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to save plan' 
+            });
+        }
+
+        console.log('✅ Plan saved successfully');
+
+        res.json({
+            success: true,
+            message: 'Plan activated successfully',
+            expiresAt: expiryDate.toISOString()
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
+
+// Update user credits (deduct when generating posts)
+app.post('/api/user/plan/deduct-credit', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing userId' 
+            });
+        }
+
+        // Get current plan
+        const { data: plan, error: fetchError } = await supabase
+            .from('user_plans')
+            .select('*')
+            .eq('user_id', userId)
+            .single();
+
+        if (fetchError || !plan) {
+            return res.status(404).json({ 
+                success: false, 
+                error: 'Plan not found' 
+            });
+        }
+
+        if (plan.credits_remaining <= 0) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'No credits remaining' 
+            });
+        }
+
+        // Deduct one credit
+        const { error: updateError } = await supabase
+            .from('user_plans')
+            .update({ 
+                credits_remaining: plan.credits_remaining - 1,
+                updated_at: new Date().toISOString()
+            })
+            .eq('user_id', userId);
+
+        if (updateError) {
+            console.error('❌ Error updating credits:', updateError);
+            return res.status(500).json({ 
+                success: false, 
+                error: 'Failed to update credits' 
+            });
+        }
+
+        res.json({
+            success: true,
+            creditsRemaining: plan.credits_remaining - 1
+        });
+
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
+});
 // ==========================================
 // ERROR HANDLING
 // ==========================================
