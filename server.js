@@ -114,17 +114,27 @@ app.get('/api/test', (req, res) => {
 // REDDIT ENDPOINTS
 // ==========================================
 
+// ==========================================
+// REDDIT ENDPOINTS - FIXED
+// ==========================================
+
 app.get('/api/reddit-rules/:subreddit', async (req, res) => {
     const subreddit = req.params.subreddit.toLowerCase();
     console.log(`\n📍 Fetching rules for: r/${subreddit}`);
     
     try {
-        const url = `https://www.reddit.com/r/${subreddit}/about/rules.json`;
-        const response = await fetchUrl(url);
+        // Use axios instead of custom fetchUrl for better reliability
+        const response = await axios.get(
+            `https://www.reddit.com/r/${subreddit}/about/rules.json`,
+            {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                timeout: 10000 // 10 second timeout
+            }
+        );
         
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
-        const data = await response.json();
+        const data = response.data;
         let rulesText = '';
         
         if (data.rules && Array.isArray(data.rules)) {
@@ -142,10 +152,33 @@ app.get('/api/reddit-rules/:subreddit', async (req, res) => {
         });
         
     } catch (error) {
-        console.error(`❌ Error: ${error.message}`);
-        res.status(500).json({ error: `Failed: ${error.message}` });
+        console.error(`❌ Error fetching r/${subreddit}:`, error.message);
+        
+        // Better error handling
+        if (error.response) {
+            if (error.response.status === 404) {
+                return res.status(404).json({ 
+                    error: 'Subreddit not found',
+                    success: false 
+                });
+            } else if (error.response.status === 403) {
+                return res.status(403).json({ 
+                    error: 'Subreddit is private or restricted',
+                    success: false 
+                });
+            }
+        }
+        
+        res.status(500).json({ 
+            error: `Failed to fetch rules: ${error.message}`,
+            success: false 
+        });
     }
 });
+
+// REMOVE the POST /api/reddit-rules endpoint - it's not needed
+// The GET endpoint above handles everything
+// Add this to your backend API (e.g., server.js or index.js)
 
 // ==========================================
 // GENERATE POST ENDPOINT
