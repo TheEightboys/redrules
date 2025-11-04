@@ -12,12 +12,13 @@ const app = express();
 
 // --- CORS FIX STARTS HERE ---
 // Define a list of origins that are allowed to connect
+// ...
 const allowedOrigins = [
     'http://127.0.0.1:5500',
     'http://localhost:5500',
-    // Add your deployed frontend URL here in the future
-    // e.g., 'https://your-app-name.netlify.app' 
+    'https://redditfix.vercel.app' // <-- ADD THIS LINE
 ];
+// ...
 
 const corsOptions = {
     origin: (origin, callback) => {
