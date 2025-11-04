@@ -5,7 +5,7 @@
 // --- SUPABASE & API CONFIG ---
 const SUPABASE_URL = 'https://duzaoqvdukdnbjzccwbp.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1emFvcXZkdWtkbmJqemNjd2JwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE4OTE2MTIsImV4cCI6MjA3NzQ2NzYxMn0.eMvGGHRuqzeGjVMjfLViaJnMvaKryGCPWWaDyFK6UP8';
-const API_URL = 'https://redrules.onrender.com';
+const API_URL = 'https://redrules.onrender.com'; // <-- This is now correct
 
 // --- GLOBAL STATE ---
 let supabaseClient = null;
@@ -15,7 +15,7 @@ let userPlan = null;
 let userHistory = [];
 let bootstrapModals = {};
 let bootstrapToast = null;
-let isServerAwake = false; // <-- NEW: Track server state
+let isServerAwake = false; 
 
 // --- PRICING DATA ---
 const PRICING_DATA = {
@@ -78,7 +78,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         await handlePaymentCallback();
         
-        // --- MODIFIED onAuthStateChange ---
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
             console.log('🔄 Auth state changed:', event);
             
@@ -87,7 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 hideAuthModal();
                 hideLoadingScreen();
                 
-                await wakeUpServer(); // <-- ADDED PING
+                await wakeUpServer(); 
                 await loadUserData(); 
                 showToast('Welcome back!', 'success');
 
@@ -96,7 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 userProfile = null;
                 userPlan = null;
                 userHistory = [];
-                isServerAwake = false; // Reset on sign out
+                isServerAwake = false; 
                 showAuthModal();
                 hideLoadingScreen();
             }
@@ -132,30 +131,27 @@ function initBootstrapComponents() {
     if (toastEl) bootstrapToast = new bootstrap.Toast(toastEl, { delay: 4000 });
 }
 
-// --- NEW FUNCTION ---
 async function wakeUpServer() {
-    if (isServerAwake) return; // Don't ping if already awake
+    if (isServerAwake) return; 
 
     console.log('Pinging server to wake it up...');
     showToast('Waking up server... this can take up to 60s.', 'info');
     try {
         const startTime = Date.now();
-        // Ping the root '/' endpoint which is fast
         const response = await fetch(API_URL, { method: 'GET' }); 
         if (!response.ok) throw new Error(`Server ping returned status ${response.status}`);
         
         const duration = (Date.now() - startTime) / 1000;
-        console.log(`✅ Server is awake. (Took ${duration.toFixed(2)}s)`);
+        console.log(`Server is awake (Took ${duration.toFixed(2)}s)`);
         showToast('Server is awake! Loading your data.', 'success');
         isServerAwake = true;
     } catch (error) {
         console.error('❌ Server ping failed:', error);
         showToast('Could not connect to the server.', 'error');
-        isServerAwake = false; // Allow retry
+        isServerAwake = false; 
     }
 }
 
-// --- MODIFIED checkAuthState ---
 async function checkAuthState() {
     let sessionFound = false;
     try {
@@ -181,9 +177,9 @@ async function checkAuthState() {
         
         if (sessionFound) {
             console.log('Spinner hidden. Waking up server...');
-            await wakeUpServer(); // <-- ADDED PING
+            await wakeUpServer(); 
             console.log('Now loading user data...');
-            await loadUserData(); // This should be fast now
+            await loadUserData(); 
             console.log('User data load attempt finished.');
         }
     }
@@ -232,34 +228,44 @@ function showDataErrorState(errorMessage) {
     showToast(errorMessage, 'error');
 }
 
+
+// --- THIS FUNCTION IS MODIFIED WITH MORE LOGS ---
 async function loadUserData() {
     if (!currentUser) return;
     
-    console.log('Attempting to load user data...');
+    console.log('[loadUserData] Attempting to load user data...');
     showDataLoadingPlaceholders(); 
 
     try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No session found');
+        console.log('[loadUserData] Getting session token...');
+        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!session) throw new Error('No session found for token');
         
         const token = session.access_token;
+        console.log('[loadUserData] Got token. Fetching from API... (This may take 30-60s for the database to wake up)');
+        
+        // This is the line that is hanging
         const response = await fetch(`${API_URL}/api/user/data`, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
+        console.log(`[loadUserData] Fetch complete. Status: ${response.status}`); // <-- NEW LOG
 
         if (!response.ok) {
             throw new Error(`Failed to fetch user data (Status: ${response.status})`);
         }
 
         const data = await response.json();
+        console.log('[loadUserData] Got JSON data.'); // <-- NEW LOG
         
         if (data.success) {
-            console.log('Successfully fetched user data.');
+            console.log('[loadUserData] Data.success == true. Fetch successful.');
             userProfile = data.profile;
             userPlan = data.plan;
             userHistory = data.history || [];
             updateUI(); 
         } else {
+            console.log(`[loadUserData] Data.success == false. Error: ${data.error}`); // <-- NEW LOG
             throw new Error(data.error || 'Could not load data');
         }
 
@@ -268,6 +274,8 @@ async function loadUserData() {
         showDataErrorState(error.message); 
     }
 }
+// --- END OF MODIFIED FUNCTION ---
+
 
 function updateUI() {
     if (!userProfile || !userPlan) return;
@@ -372,8 +380,6 @@ async function handleLogin(e) {
         if (error) throw error;
         if (!data.session) throw new Error('Login failed - no session created');
         
-        // onAuthStateChange will handle the rest
-        
     } catch (error) {
         console.error('❌ Login error:', error);
         showToast(error.message || 'Login failed', 'error');
@@ -452,7 +458,6 @@ async function handleGoogleSignIn() {
 async function handleSignOut() {
     try {
         await supabaseClient.auth.signOut();
-        // onAuthStateChange will handle the rest
     } catch (error) {
         console.error('❌ Sign out error:', error);
         showToast(error.message || 'Sign out failed', 'error');
@@ -464,7 +469,7 @@ async function handleSignOut() {
 // ============================================
 
 async function handleFetchRules(type) {
-    await wakeUpServer(); // Ensure server is awake before API calls
+    await wakeUpServer(); 
     const isAI = type === 'ai';
     const inputId = isAI ? 'aiSubredditInput' : 'optimizerSubredditInput';
     const buttonId = isAI ? 'aiFetchGuidelinesBtn' : 'optimizerFetchGuidelinesBtn';
@@ -509,7 +514,7 @@ async function handleAIGenerate(isRegen = false) {
         return navigateToPage('pricing');
     }
     
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     const subreddit = getValue('aiSubredditInput').trim();
     const topic = getValue('aiTopicInput').trim();
     const style = getValue('aiStyleSelect');
@@ -565,7 +570,7 @@ async function handleOptimize(isRegen = false) {
         return navigateToPage('pricing');
     }
 
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     const subreddit = getValue('optimizerSubredditInput').trim();
     const content = getValue('optimizerContentInput').trim();
     const style = getValue('optimizationStyleSelect');
@@ -664,7 +669,7 @@ async function handlePaymentCallback() {
                 const { data: { session } } = await supabaseClient.auth.getSession();
                 
                 if (session) {
-                    await wakeUpServer(); // Wake server before verifying
+                    await wakeUpServer(); 
                     await fetch(`${API_URL}/api/payment/verify`, {
                         method: 'POST',
                         headers: {
@@ -680,7 +685,7 @@ async function handlePaymentCallback() {
             }
         }
         
-        setTimeout(() => navigateToPage('aiGenerator'), 2000); // Reloading data happens on auth change
+        setTimeout(() => navigateToPage('aiGenerator'), 2000); 
         window.history.replaceState({}, document.title, window.location.pathname);
         
     } else if (paymentStatus === 'cancelled') {
@@ -707,7 +712,7 @@ function updatePricingDisplay() {
 // ============================================
 
 async function handleSaveProfile() {
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     const displayName = getValue('settingsDisplayName').trim();
     const bio = getValue('settingsBio').trim();
 
@@ -743,7 +748,7 @@ async function handleSaveProfile() {
 }
 
 async function handleChangePassword() {
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     const newPassword = getValue('newPassword');
     const confirm = getValue('confirmPassword');
 
@@ -786,7 +791,7 @@ async function handleChangePassword() {
 async function handleLogoutAll() {
     if (!confirm('Are you sure you want to sign out from all devices?')) return;
     
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     setButtonLoading('logoutAllBtn', true, 'Logging out...');
 
     try {
@@ -817,7 +822,7 @@ async function handleDeleteAccount() {
     const password = getValue('deleteConfirmPassword');
     if (!password) return showToast('Please enter your password to confirm', 'warning');
 
-    await wakeUpServer(); // Ensure server is awake
+    await wakeUpServer(); 
     setButtonLoading('deleteAccountBtn', true, 'Deleting...');
 
     try {
@@ -895,7 +900,7 @@ function initializeEventListeners() {
     document.getElementById('monthlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('yearlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('saveProfileBtn')?.addEventListener('click', handleSaveProfile);
-    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword);
+    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChange.password);
     document.getElementById('logoutAllBtn')?.addEventListener('click', handleLogoutAll);
     document.getElementById('deleteAccountBtn')?.addEventListener('click', handleDeleteAccount);
     document.getElementById('viewPostCopyBtn')?.addEventListener('click', () => {
