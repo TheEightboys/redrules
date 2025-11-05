@@ -4,25 +4,14 @@ services:
     env: node
     plan: free
     buildCommand: npm install
-    startCommand: node backend/server.js
+    startCommand: node server.js
     envVars:
-      - key: PORT
-        sync: false
       - key: NODE_ENV
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_KEY
-        sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: DODO_API_KEY
-        sync: false
+        value: production
       - key: DODO_MODE
-        sync: false
+        value: production
       - key: FRONTEND_URL
-        sync: false
+        value: https://redditfix.vercel.app
       - key: BACKEND_URL
         sync: false
+    healthCheckPath: /api/test

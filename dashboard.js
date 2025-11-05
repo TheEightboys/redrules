@@ -1,5 +1,5 @@
 // ============================================
-// PRODUCTION-READY DASHBOARD.JS (FIXED)
+// PRODUCTION-READY DASHBOARD.JS (FULLY FIXED)
 // ============================================
 
 // --- SUPABASE & API CONFIG ---
@@ -16,7 +16,8 @@ let userHistory = [];
 let bootstrapModals = {};
 let bootstrapToast = null;
 let isServerAwake = false;
-let isDataLoading = false; 
+let isDataLoading = false;
+let serverWakeupPromise = null;
 
 // --- PRICING DATA ---
 const PRICING_DATA = {
@@ -25,7 +26,7 @@ const PRICING_DATA = {
             price: 1.99, 
             posts: 150,
             productId: 'pdt_LBHf0mWr6mV54umDhx9cn',
-            checkoutUrl: 'https://checkout.dodopayments.com/buy/pdt_LBHf0mWr6mV54umDhx9cn'
+            checkoutUrl: 'https://test.checkout.dodopayments.com/buy/pdt_XocDrGw3HxTb0nD7nyYyl?quantity=1'
         },
         yearly: { 
             price: 21.49, 
@@ -80,6 +81,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         initializeEventListeners();
         updatePricingDisplay();
         
+        // Wake up server immediately on page load
+        wakeUpServerInBackground();
+        
         await handlePaymentCallback();
         
         supabaseClient.auth.onAuthStateChange(async (event, session) => {
@@ -88,32 +92,32 @@ document.addEventListener('DOMContentLoaded', async () => {
             if ((event === 'INITIAL_SESSION' || event === 'SIGNED_IN') && session) {
                 currentUser = session.user;
                 hideAuthModal();
-                hideLoadingScreen();
                 
-                // No need to ping server just to load data
-                // We will ping it later IF the user tries to generate a post
-                await loadUserData(); 
-                showToast('Welcome back!', 'success');
+                await loadUserData(session.access_token);
+                
+                if (event === 'SIGNED_IN') {
+                    showToast('Welcome back!', 'success');
+                }
+                hideLoadingScreen();
 
             } else if (event === 'SIGNED_OUT') {
                 currentUser = null;
                 userProfile = null;
                 userPlan = null;
                 userHistory = [];
-                isServerAwake = false; 
-                isDataLoading = false; 
+                isServerAwake = false;
+                isDataLoading = false;
                 showAuthModal();
                 hideLoadingScreen();
             }
         });
         
-        // This will trigger the 'INITIAL_SESSION' event above
         await checkAuthState();
 
     } catch (error) {
         console.error('❌ FATAL: Dashboard initialization failed:', error);
-        hideLoadingScreen(); // Hide spinner even on error
-        showErrorAlert(error.message); // Show a user-friendly error
+        hideLoadingScreen();
+        showErrorAlert(error.message);
     }
 });
 
@@ -131,43 +135,54 @@ function initBootstrapComponents() {
 function showErrorAlert(message) {
     const loadingScreen = document.getElementById('loadingScreen');
     if (loadingScreen) {
-        loadingScreen.style.display = 'flex'; // Ensure it's visible
+        loadingScreen.style.display = 'flex';
         loadingScreen.innerHTML = `
             <div class="text-danger p-5 text-center" style="max-width: 600px; margin: auto;">
                 <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
                 <h5 class="fw-bold">Application Failed to Load</h5>
-                <p class="text-muted">An error occurred during initialization. Please check your internet connection and make sure browser extensions (like adblockers) are not blocking essential scripts.</p>
+                <p class="text-muted">An error occurred. Please refresh the page.</p>
                 <code class="text-dark d-block bg-light p-2 rounded small">${message}</code>
+                <button class="btn btn-primary mt-3" onclick="location.reload()">Reload Page</button>
             </div>`;
     }
 }
 
-async function wakeUpServer() {
-    if (isServerAwake) return; 
+// Improved server wake-up with promise caching
+async function wakeUpServerInBackground() {
+    if (isServerAwake || serverWakeupPromise) return serverWakeupPromise;
 
-    console.log('Pinging server to wake it up...');
-    showToast('Waking up AI server... (can take 60s)', 'info');
-    try {
-        const startTime = Date.now();
-        // Ping the root '/' or a dedicated '/api/test' endpoint
-        const response = await fetch(`${API_URL}/api/test`, { method: 'GET' }); 
-        if (!response.ok) throw new Error(`Server ping returned status ${response.status}`);
-        
-        const duration = (Date.now() - startTime) / 1000;
-        console.log(`Server is awake (Took ${duration.toFixed(2)}s)`);
-        showToast('AI server is awake!', 'success');
-        isServerAwake = true;
-    } catch (error) {
-        console.error('❌ Server ping failed:', error);
-        showToast('Could not connect to the AI server.', 'error');
-        isServerAwake = false; 
-    }
+    console.log('🔥 Waking up server in background...');
+    
+    serverWakeupPromise = (async () => {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout
+            
+            const response = await fetch(`${API_URL}/api/test`, { 
+                method: 'GET',
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) throw new Error(`Server returned ${response.status}`);
+            
+            console.log('✅ Server is awake and ready!');
+            isServerAwake = true;
+            return true;
+        } catch (error) {
+            console.error('❌ Server wake-up failed:', error.message);
+            isServerAwake = false;
+            serverWakeupPromise = null; // Reset so it can be retried
+            throw error;
+        }
+    })();
+    
+    return serverWakeupPromise;
 }
 
 async function checkAuthState() {
     try {
-        // This just triggers the onAuthStateChange listener
-        // The listener will handle 'INITIAL_SESSION'
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (error) throw error;
 
@@ -184,144 +199,99 @@ async function checkAuthState() {
 }
 
 // ============================================
-// DATA FETCHING & UI UPDATES
+// DATA FETCHING & UI UPDATES (FIXED)
 // ============================================
 
 function showDataLoadingPlaceholders() {
     console.log('Displaying loading placeholders...');
-    const loadingText = '...';
-    const longLoadingText = 'Loading...';
-
-    setText('creditsLeft', loadingText);
-    setText('dropdownUserName', longLoadingText);
-    setText('dropdownUserEmail', loadingText);
+    const shimmer = '<span class="placeholder-glow"><span class="placeholder col-6"></span></span>';
+    
+    setText('creditsLeft', '...');
+    setText('dropdownUserName', 'Loading...');
+    setText('dropdownUserEmail', '...');
     setText('dropdownCreditsUsed', '... / ...');
-    setStyle('creditsProgress', 'width', `100%`);
-    setText('dropdownTotalPosts', loadingText);
-    setText('dropdownJoinDate', loadingText);
-    setText('profileName', longLoadingText);
-    setText('profileEmail', loadingText);
-    setText('totalPosts', loadingText);
-    setText('creditsUsed', loadingText);
-    setText('memberSince', loadingText);
-    setValue('settingsEmail', longLoadingText);
-    setValue('settingsDisplayName', '');
-    setValue('settingsBio', '');
-    setText('settingsCreditsDisplay', loadingText);
-    setText('settingsCreditsSubtext', 'Loading credit info...');
-    setStyle('settingsProgressDisplay', 'width', '100%');
+    setText('dropdownTotalPosts', '...');
+    setText('dropdownJoinDate', '...');
+    setText('profileName', 'Loading...');
+    setText('profileEmail', '...');
+    setText('totalPosts', '...');
+    setText('creditsUsed', '...');
+    setText('memberSince', '...');
+    setValue('settingsEmail', 'Loading...');
+    setText('settingsCreditsDisplay', '...');
+}
+
+async function loadUserData(token) {
+    if (isDataLoading) {
+        console.log('[loadUserData] Already loading, skipping.');
+        return;
+    }
+    if (!currentUser || !token) {
+        console.error('[loadUserData] No user or token.');
+        return;
+    }
+    
+    isDataLoading = true;
+    console.log('[loadUserData] Starting data fetch...');
+    showDataLoadingPlaceholders();
+
+    try {
+        // Ensure server is awake
+        await wakeUpServerInBackground();
+        
+        console.log('[loadUserData] Fetching user data from API...');
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+        
+        const response = await fetch(`${API_URL}/api/user/data`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log(`[loadUserData] Response status: ${response.status}`);
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('[loadUserData] ✅ Data loaded successfully');
+            userProfile = data.profile;
+            userPlan = data.plan;
+            userHistory = data.history || [];
+            updateUI();
+        } else {
+            throw new Error(data.error || 'Failed to load data');
+        }
+
+    } catch (error) {
+        console.error('❌ Error loading data:', error.message);
+        
+        if (error.name === 'AbortError') {
+            showToast('Server is taking too long to respond. Please refresh.', 'error');
+        } else {
+            showToast(`Failed to load data: ${error.message}`, 'error');
+        }
+        
+        showDataErrorState(error.message);
+    } finally {
+        isDataLoading = false;
+    }
 }
 
 function showDataErrorState(errorMessage) {
     console.error('Displaying error state:', errorMessage);
-    const errorText = 'Error';
     setText('creditsLeft', '!');
-    setText('dropdownUserName', errorText);
-    setText('dropdownUserEmail', 'Could not load data');
-    setText('profileName', errorText);
-    setText('profileEmail', 'Could not load data');
-    setValue('settingsEmail', 'Error loading email');
+    setText('dropdownUserName', 'Error');
+    setText('dropdownUserEmail', 'Could not load');
+    setText('profileName', 'Error');
     setText('settingsCreditsDisplay', '!');
-    setText('settingsCreditsSubtext', 'Error loading credits');
-    showToast(`Failed to load data: ${errorMessage}`, 'error');
 }
-
-
-// --- NEW: loadUserData fetches directly from Supabase ---
-async function loadUserData() {
-    if (isDataLoading) {
-        console.log('[loadUserData] Already loading, skipping duplicate request.');
-        return;
-    }
-    if (!currentUser) {
-        console.error('[loadUserData] No user, aborting.');
-        return;
-    }
-    
-    isDataLoading = true; 
-    console.log('[loadUserData] Attempting to load data directly from Supabase...');
-    showDataLoadingPlaceholders(); 
-
-    try {
-        // We use Promise.all to fetch profile and plan at the same time
-        const [profileResult, planResult, historyResult] = await Promise.all([
-            supabaseClient
-                .from('user_profiles')
-                .select('*')
-                .eq('user_id', currentUser.id)
-                .single(),
-            supabaseClient
-                .from('user_plans')
-                .select('*')
-                .eq('user_id', currentUser.id)
-                .single(),
-            supabaseClient
-                .from('post_history')
-                .select('*')
-                .eq('user_id', currentUser.id)
-                .order('created_at', { ascending: false })
-                .limit(50)
-        ]);
-
-        if (profileResult.error) {
-            throw new Error(`Profile Error: ${profileResult.error.message}. Did you enable RLS?`);
-        }
-        if (planResult.error) {
-            // This might fail if the user is new. We should use the backend to create one.
-            console.warn('Could not fetch plan directly. Trying backend...');
-            await loadDataFromBackend();
-            return; // Exit, as backend function will handle the rest
-        }
-        if (historyResult.error) {
-            throw new Error(`History Error: ${historyResult.error.message}`);
-        }
-
-        console.log('[loadUserData] Direct fetch successful.');
-        userProfile = profileResult.data;
-        userPlan = planResult.data;
-        userHistory = historyResult.data || [];
-        
-        updateUI(); 
-
-    } catch (error) {
-        console.error('❌ Error loading data directly:', error);
-        // Fallback to backend if direct fetch fails (e.g., RLS not set up)
-        console.warn('Direct fetch failed. Falling back to secure backend fetch...');
-        await loadDataFromBackend();
-    } finally {
-        isDataLoading = false; 
-    }
-}
-
-// This is the original, secure backend fetch
-async function loadDataFromBackend() {
-    console.log('[loadDataFromBackend] Fetching from secure API...');
-    try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (!session) throw new Error('No session found for token');
-
-        const response = await fetch(`${API_URL}/api/user/data`, {
-            headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-
-        if (!response.ok) {
-            throw new Error(`Failed to fetch user data (Status: ${response.status})`);
-        }
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error);
-
-        console.log('[loadDataFromBackend] Secure fetch successful.');
-        userProfile = data.profile;
-        userPlan = data.plan;
-        userHistory = data.history || [];
-        updateUI();
-    } catch (error) {
-        console.error('❌ Error loading data from backend:', error);
-        showDataErrorState(error.message);
-    }
-}
-// --- END OF NEW/MODIFIED FUNCTIONS ---
-
 
 function updateUI() {
     if (!userProfile || !userPlan) return;
@@ -457,15 +427,14 @@ async function handleSignup(e) {
             email, 
             password,
             options: { 
-                emailRedirectTo: `${window.location.origin}/dashboard.html`,
-                data: { email_confirmed: false }
+                emailRedirectTo: `${window.location.origin}/dashboard.html`
             }
         });
         
         if (error) throw error;
 
         if (data.user) {
-            showToast('Account created! Please check your email to verify.', 'success');
+            showToast('Account created! Check email to verify.', 'success');
             setValue('signupEmail', '');
             setValue('signupPassword', '');
             setValue('signupPasswordConfirm', '');
@@ -481,19 +450,14 @@ async function handleSignup(e) {
 
 async function handleGoogleSignIn() {
     try {
-        const { data, error } = await supabaseClient.auth.signInWithOAuth({
+        const { error } = await supabaseClient.auth.signInWithOAuth({
             provider: 'google',
             options: { 
-                redirectTo: `${window.location.origin}/dashboard.html`,
-                queryParams: {
-                    access_type: 'offline',
-                    prompt: 'consent'
-                }
+                redirectTo: `${window.location.origin}/dashboard.html`
             }
         });
         
         if (error) throw error;
-        console.log('🔄 Redirecting to Google...');
         
     } catch (error) {
         console.error('❌ Google sign-in error:', error);
@@ -511,12 +475,10 @@ async function handleSignOut() {
 }
 
 // ============================================
-// AI & OPTIMIZER FUNCTIONS (USES SECURE BACKEND)
+// AI & OPTIMIZER FUNCTIONS (FIXED)
 // ============================================
 
 async function handleFetchRules(type) {
-    // This is a public API, but we wake up the server anyway
-    await wakeUpServer(); 
     const isAI = type === 'ai';
     const inputId = isAI ? 'aiSubredditInput' : 'optimizerSubredditInput';
     const buttonId = isAI ? 'aiFetchGuidelinesBtn' : 'optimizerFetchGuidelinesBtn';
@@ -527,10 +489,15 @@ async function handleFetchRules(type) {
     const subreddit = getValue(inputId).trim();
     if (!subreddit) return showToast('Please enter a subreddit name', 'warning');
 
-    setButtonLoading(buttonId, true, '');
+    setButtonLoading(buttonId, true, 'Fetching...');
     
     try {
-        const response = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`);
+        await wakeUpServerInBackground();
+        
+        const response = await fetch(`${API_URL}/api/reddit-rules/${subreddit}`, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
         const data = await response.json();
 
         if (!response.ok || !data.success) {
@@ -545,6 +512,8 @@ async function handleFetchRules(type) {
             document.getElementById('optimizerOptimizeBtn').disabled = false;
             setText('optimizerButtonHelp', 'Ready to optimize!');
         }
+        
+        showToast('Rules fetched successfully!', 'success');
 
     } catch (error) {
         console.error('❌ Rules fetch error:', error);
@@ -561,30 +530,29 @@ async function handleAIGenerate(isRegen = false) {
         return navigateToPage('pricing');
     }
     
-    // This *must* use the backend to securely decrement credits
-    await wakeUpServer(); 
     const subreddit = getValue('aiSubredditInput').trim();
     const topic = getValue('aiTopicInput').trim();
     const style = getValue('aiStyleSelect');
-    const rules = getText('aiGuidelinesContent');
+    const rules = getText('aiGuidelinesContent') || 'Follow standard Reddit etiquette';
 
     if (!subreddit || !topic) {
-        return showToast('Please enter a subreddit and topic', 'warning');
+        return showToast('Please enter subreddit and topic', 'warning');
     }
 
     setButtonLoading('aiGenerateBtn', true, 'Generating...');
-    if (isRegen) setButtonLoading('aiRegenerateBtn', true, '');
+    if (isRegen) setButtonLoading('aiRegenerateBtn', true, 'Regenerating...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/generate-post`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({ subreddit, topic, style, rules })
         });
@@ -597,10 +565,9 @@ async function handleAIGenerate(isRegen = false) {
         setText('aiTargetSubreddit', subreddit);
         show('aiOutputCard');
         
-        // The backend returns the new credit count and history item
         userPlan.credits_remaining = data.creditsRemaining;
         userHistory.unshift(data.historyItem);
-        updateUI(); // Update UI with new credit count
+        updateUI();
         
         showToast('Content generated successfully!', 'success');
 
@@ -619,30 +586,29 @@ async function handleOptimize(isRegen = false) {
         return navigateToPage('pricing');
     }
 
-    // This *must* use the backend to securely decrement credits
-    await wakeUpServer(); 
     const subreddit = getValue('optimizerSubredditInput').trim();
     const content = getValue('optimizerContentInput').trim();
     const style = getValue('optimizationStyleSelect');
-    const rules = getText('optimizerGuidelinesContent');
+    const rules = getText('optimizerGuidelinesContent') || 'Follow standard Reddit guidelines';
 
     if (!subreddit || !content) {
-        return showToast('Please enter a subreddit and content', 'warning');
+        return showToast('Please enter subreddit and content', 'warning');
     }
 
     setButtonLoading('optimizerOptimizeBtn', true, 'Optimizing...');
-    if (isRegen) setButtonLoading('optimizerRegenerateBtn', true, '');
+    if (isRegen) setButtonLoading('optimizerRegenerateBtn', true, 'Optimizing...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/optimize-post`, {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({ subreddit, content, style, rules })
         });
@@ -656,7 +622,7 @@ async function handleOptimize(isRegen = false) {
         
         userPlan.credits_remaining = data.creditsRemaining;
         userHistory.unshift(data.historyItem);
-        updateUI(); // Update UI with new credit count
+        updateUI();
         
         showToast('Content optimized successfully!', 'success');
 
@@ -670,8 +636,16 @@ async function handleOptimize(isRegen = false) {
 }
 
 // ============================================
-// PAYMENT FUNCTIONS (USES SECURE BACKEND)
+// PAYMENT FUNCTIONS (FIXED WITH METADATA)
 // ============================================
+
+// ==========================================
+// PAYMENT FUNCTIONS (FIXED)
+// ==========================================
+
+// ==========================================
+// PAYMENT FUNCTIONS (FULLY FIXED)
+// ==========================================
 
 async function initiateDodoPayment(planType) {
     if (!currentUser) {
@@ -694,9 +668,36 @@ async function initiateDodoPayment(planType) {
         };
         
         localStorage.setItem('pending_payment', JSON.stringify(pendingPayment));
-        showToast('Redirecting to payment...', 'info');
-        const checkoutUrl = `${planData.checkoutUrl}?quantity=1`;
-        window.location.href = checkoutUrl;
+        showToast('Redirecting to secure checkout...', 'info');
+        
+        // Build complete checkout URL with all parameters
+        const successUrl = encodeURIComponent(`${FRONTEND_URL}/dashboard.html?payment=success`);
+        const cancelUrl = encodeURIComponent(`${FRONTEND_URL}/dashboard.html?payment=cancelled`);
+        
+        let checkoutUrl = planData.checkoutUrl;
+        
+        // Add separator
+        const separator = checkoutUrl.includes('?') ? '&' : '?';
+        
+        // Add ALL metadata for webhook processing
+        const params = new URLSearchParams({
+            'return_url': successUrl,
+            'cancel_url': cancelUrl,
+            'metadata[userId]': currentUser.id,
+            'metadata[email]': currentUser.email,
+            'metadata[plan]': planType,
+            'metadata[billingCycle]': billingCycle,
+            'metadata[posts]': planData.posts.toString(),
+            'metadata[amount]': planData.price.toString()
+        });
+        
+        checkoutUrl = `${checkoutUrl}${separator}${params.toString()}`;
+        
+        console.log('🔗 Redirecting to:', checkoutUrl);
+        
+        setTimeout(() => {
+            window.location.href = checkoutUrl;
+        }, 800);
 
     } catch (error) {
         console.error('❌ Payment init error:', error);
@@ -707,48 +708,90 @@ async function initiateDodoPayment(planType) {
 async function handlePaymentCallback() {
     const urlParams = new URLSearchParams(window.location.search);
     const paymentStatus = urlParams.get('payment');
-    const sessionId = urlParams.get('session_id');
-
+    const sessionId = urlParams.get('session_id') || urlParams.get('payment_id');
+    
+    // Detect Dodo redirect (has session_id but no explicit status)
+    if (sessionId && !paymentStatus) {
+        console.log('🎉 Detected Dodo return with session:', sessionId);
+        await processPaymentSuccess(sessionId);
+        return;
+    }
+    
+    // Handle explicit status
     if (paymentStatus === 'success') {
-        showToast('Payment successful! 🎉 Activating your plan...', 'success');
-        
-        const pendingPayment = localStorage.getItem('pending_payment');
-        if (pendingPayment) {
-            try {
-                const paymentData = JSON.parse(pendingPayment);
-                const { data: { session } } = await supabaseClient.auth.getSession();
-                
-                if (session) {
-                    await wakeUpServer(); 
-                    await fetch(`${API_URL}/api/payment/verify`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${session.access_token}`
-                        },
-                        body: JSON.stringify({ ...paymentData, sessionId: sessionId })
-                    });
-                }
-                localStorage.removeItem('pending_payment');
-            } catch (error) {
-                console.error('Error processing payment callback:', error);
-            }
-        }
-        
-        setTimeout(() => navigateToPage('aiGenerator'), 2000); 
-        window.history.replaceState({}, document.title, window.location.pathname);
-        
+        console.log('✅ Payment success status detected');
+        await processPaymentSuccess(sessionId);
     } else if (paymentStatus === 'cancelled') {
         showToast('Payment was cancelled.', 'warning');
         localStorage.removeItem('pending_payment');
+        window.history.replaceState({}, document.title, window.location.pathname);
         navigateToPage('pricing');
+    }
+}
+
+async function processPaymentSuccess(sessionId) {
+    showToast('🎉 Payment successful! Activating plan...', 'success');
+    
+    const pendingPayment = localStorage.getItem('pending_payment');
+    if (!pendingPayment) {
+        showToast('Payment data not found. Please check your plan status.', 'warning');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+    }
+    
+    try {
+        const paymentData = JSON.parse(pendingPayment);
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        
+        if (!session) {
+            throw new Error('Not authenticated');
+        }
+        
+        // Ensure server is awake
+        await wakeUpServerInBackground();
+        
+        console.log('📡 Verifying payment with backend...');
+        
+        const response = await fetch(`${API_URL}/api/payment/verify`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ 
+                ...paymentData, 
+                sessionId: sessionId || `manual_${Date.now()}`
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('✅ Plan activated successfully!', 'success');
+            localStorage.removeItem('pending_payment');
+            
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+            // Reload user data to get updated credits
+            setTimeout(async () => {
+                await loadUserData(session.access_token);
+                navigateToPage('aiGenerator');
+            }, 1500);
+        } else {
+            throw new Error(result.error || 'Activation failed');
+        }
+    } catch (error) {
+        console.error('❌ Payment verification error:', error);
+        showToast('Payment received but activation failed. Contact support.', 'warning');
+        localStorage.removeItem('pending_payment');
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 }
 
 function updatePricingDisplay() {
     const cycleInput = document.querySelector('input[name="billingCycle"]:checked');
-    if (!cycleInput) return; 
+    if (!cycleInput) return;
     
     const cycle = cycleInput.value;
     
@@ -761,29 +804,26 @@ function updatePricingDisplay() {
 }
 
 // ============================================
-// SETTINGS PAGE FUNCTIONS (USES SECURE BACKEND)
+// SETTINGS PAGE FUNCTIONS
 // ============================================
 
 async function handleSaveProfile() {
-    // We can't do this directly from the frontend, as RLS by default
-    // only allows users to READ their own data, not WRITE it.
-    // We *must* use the secure backend.
-    await wakeUpServer(); 
     const displayName = getValue('settingsDisplayName').trim();
     const bio = getValue('settingsBio').trim();
 
     setButtonLoading('saveProfileBtn', true, 'Saving...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/user/profile`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({ displayName, bio })
         });
@@ -804,7 +844,6 @@ async function handleSaveProfile() {
 }
 
 async function handleChangePassword() {
-    await wakeUpServer(); 
     const newPassword = getValue('newPassword');
     const confirm = getValue('confirmPassword');
 
@@ -815,15 +854,16 @@ async function handleChangePassword() {
     setButtonLoading('changePasswordBtn', true, 'Updating...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/change-password`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({ newPassword })
         });
@@ -845,26 +885,25 @@ async function handleChangePassword() {
 }
 
 async function handleLogoutAll() {
-    if (!confirm('Are you sure you want to sign out from all devices?')) return;
+    if (!confirm('Sign out from all devices?')) return;
     
-    await wakeUpServer(); 
     setButtonLoading('logoutAllBtn', true, 'Logging out...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/logout-all`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` }
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
         
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
 
         await handleSignOut();
-        showToast('Signed out from all devices.', 'success');
 
     } catch (error) {
         console.error('❌ Logout all error:', error);
@@ -876,21 +915,21 @@ async function handleLogoutAll() {
 
 async function handleDeleteAccount() {
     const password = getValue('deleteConfirmPassword');
-    if (!password) return showToast('Please enter your password to confirm', 'warning');
+    if (!password) return showToast('Enter password to confirm', 'warning');
 
-    await wakeUpServer(); 
     setButtonLoading('deleteAccountBtn', true, 'Deleting...');
 
     try {
+        await wakeUpServerInBackground();
+        
         const { data: { session } } = await supabaseClient.auth.getSession();
         if (!session) throw new Error('Not authenticated');
         
-        const token = session.access_token;
         const response = await fetch(`${API_URL}/api/auth/delete-account`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                'Authorization': `Bearer ${session.access_token}`
             },
             body: JSON.stringify({ password })
         });
@@ -900,7 +939,7 @@ async function handleDeleteAccount() {
 
         bootstrapModals.deleteAccountModal.hide();
         await handleSignOut();
-        showToast('Account deleted successfully.', 'success');
+        showToast('Account deleted.', 'success');
 
     } catch (error) {
         console.error('❌ Delete account error:', error);
@@ -943,24 +982,24 @@ function initializeEventListeners() {
     document.getElementById('aiRegenerateBtn')?.addEventListener('click', () => handleAIGenerate(true));
     document.getElementById('aiCopyBtn')?.addEventListener('click', () => {
         const text = `Title: ${getValue('aiGeneratedTitle')}\n\nContent:\n${getValue('aiGeneratedContent')}`;
-        copyToClipboard(text, 'Full post copied to clipboard!');
+        copyToClipboard(text, 'Post copied!');
     });
 
     document.getElementById('optimizerFetchGuidelinesBtn')?.addEventListener('click', () => handleFetchRules('optimizer'));
     document.getElementById('optimizerOptimizeBtn')?.addEventListener('click', () => handleOptimize(false));
     document.getElementById('optimizerRegenerateBtn')?.addEventListener('click', () => handleOptimize(true));
     document.getElementById('optimizerCopyBtn')?.addEventListener('click', () => {
-        copyToClipboard(getValue('optimizerOptimizedText'), 'Optimized content copied!');
+        copyToClipboard(getValue('optimizerOptimizedText'), 'Content copied!');
     });
 
     document.getElementById('monthlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('yearlyBilling')?.addEventListener('change', updatePricingDisplay);
     document.getElementById('saveProfileBtn')?.addEventListener('click', handleSaveProfile);
-    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword); 
+    document.getElementById('changePasswordBtn')?.addEventListener('click', handleChangePassword);
     document.getElementById('logoutAllBtn')?.addEventListener('click', handleLogoutAll);
     document.getElementById('deleteAccountBtn')?.addEventListener('click', handleDeleteAccount);
     document.getElementById('viewPostCopyBtn')?.addEventListener('click', () => {
-        copyToClipboard(getValue('viewPostContent'), 'Post content copied!');
+        copyToClipboard(getValue('viewPostContent'), 'Copied!');
     });
 }
 
@@ -975,10 +1014,7 @@ function navigateToPage(pageName) {
     document.getElementById(`${pageName}Section`)?.classList.add('active');
     
     document.querySelectorAll('.sidebar-item').forEach(item => {
-        // --- THIS WAS THE FATAL TYPO ---
-        item.classList.remove('active'); // Fixed: Changed ..remove to .remove
-        // --- END FIX ---
-        
+        item.classList.remove('active');
         if (item.dataset.page === pageName) {
             item.classList.add('active');
         }
@@ -993,7 +1029,7 @@ function navigateToPage(pageName) {
         pricing: 'Pricing Plans'
     };
     setText('pageTitle', titles[pageName] || 'Dashboard');
-    document.getElementById('sidebar').classList.remove('active');
+    document.getElementById('sidebar')?.classList.remove('active');
 }
 
 function showViewPostModal(post) {
@@ -1003,11 +1039,11 @@ function showViewPostModal(post) {
     if (bootstrapModals.viewPostModal) bootstrapModals.viewPostModal.show();
 }
 
-function showAuthModal() { 
+function showAuthModal() {
     if (bootstrapModals.authModal) bootstrapModals.authModal.show();
 }
 
-function hideAuthModal() { 
+function hideAuthModal() {
     if (bootstrapModals.authModal) {
         try {
             bootstrapModals.authModal.hide();
@@ -1017,12 +1053,12 @@ function hideAuthModal() {
     }
 }
 
-function showLoadingScreen() { 
+function showLoadingScreen() {
     const el = document.getElementById('loadingScreen');
     if (el) el.style.display = 'flex';
 }
 
-function hideLoadingScreen() { 
+function hideLoadingScreen() {
     const el = document.getElementById('loadingScreen');
     if (el) el.style.display = 'none';
 }
@@ -1083,7 +1119,7 @@ function setButtonLoading(id, isLoading, loadingText = '') {
     btn.disabled = isLoading;
     if (isLoading) {
         btn.innerHTML = `
-            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span class="spinner-border spinner-border-sm" role="status"></span>
             ${loadingText}
         `;
     } else {
@@ -1096,10 +1132,7 @@ function showToast(message, type = 'info') {
     const titleEl = document.getElementById('toastTitle');
     const messageEl = document.getElementById('toastMessage');
 
-    if (!toastEl || !titleEl || !messageEl || !bootstrapToast) {
-        console.warn('Toast elements not found');
-        return;
-    }
+    if (!toastEl || !titleEl || !messageEl || !bootstrapToast) return;
 
     toastEl.classList.remove('bg-success', 'bg-danger', 'bg-warning', 'bg-info', 'text-white');
     
@@ -1116,9 +1149,7 @@ function showToast(message, type = 'info') {
     messageEl.textContent = message;
     toastEl.classList.add(config.bg, 'text-white');
 
-    if (bootstrapToast) {
-        bootstrapToast.show();
-    }
+    if (bootstrapToast) bootstrapToast.show();
 }
 
 function copyToClipboard(text, successMessage) {
@@ -1126,12 +1157,12 @@ function copyToClipboard(text, successMessage) {
         showToast(successMessage, 'success');
     }).catch(err => {
         console.error('Copy failed:', err);
-        showToast('Failed to copy text', 'error');
+        showToast('Failed to copy', 'error');
     });
 }
 
 // ============================================
-// GLOBAL WINDOW EXPORTS
+// GLOBAL EXPORTS
 // ============================================
 window.navigateToPage = navigateToPage;
 window.initiateDodoPayment = initiateDodoPayment;
